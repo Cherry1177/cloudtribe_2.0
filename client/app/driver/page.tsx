@@ -1,0 +1,529 @@
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
+import DriverForm from "@/components/driver/DriverForm";
+import OrderListWithPagination from "@/components/driver/OrderListWithPagination";
+import DriverOrdersPage from "@/components/driver/DriverOrdersPage";
+import DriverAvailableTimes from "@/components/driver/DriverAvailableTimes"; 
+import { ModernNavigation } from "@/components/ModernNavigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet";
+import { useRouter } from 'next/navigation';
+import UserService from '@/services/user/user'; 
+import DriverService  from '@/services/driver/driver';
+import { Driver } from '@/interfaces/driver/driver'; 
+import { Order } from '@/interfaces/tribe_resident/buyer/order';
+import { DriverOrder } from '@/interfaces/driver/driver';
+
+
+const DriverPage: React.FC = () => {
+    const [showRegisterForm, setShowRegisterForm] = useState(false);
+    const [showDriverOrders, setShowDriverOrders] = useState(false);
+    const [unacceptedOrders, setUnacceptedOrders] = useState<Order[]>([]);
+    const [acceptedOrders, setAcceptedOrders] = useState<Order[]>([]);
+    const [driverData, setDriverData] = useState<Driver | null>(null);
+    const router = useRouter();
+    const [user, setUser] = useState(UserService.getLocalStorageUser());
+    const [isClient, setIsClient] = useState(false); 
+    const [showAddTimeTip, setShowAddTimeTip] = useState(true);
+
+    // add state for showing unaccepted orders
+    const [showUnacceptedOrders, setShowUnacceptedOrders] = useState(false);
+
+
+
+    useEffect(() => {
+        setShowAddTimeTip(true);
+        setIsClient(true);
+        const handleUserDataChanged = () => {
+            const updatedUser = UserService.getLocalStorageUser();
+            setUser(updatedUser);
+        };
+    
+        window.addEventListener("userDataChanged", handleUserDataChanged);
+    
+        return () => {
+            window.removeEventListener("userDataChanged", handleUserDataChanged);
+        };
+    }, []);
+
+    // ensure user.is_driver is a boolean
+    useEffect(() => {
+        if (user && typeof user.is_driver === 'string') {
+            user.is_driver = user.is_driver === 'true';
+            setUser({ ...user });
+        }
+    }, [user]);
+
+    // use user.id to get driverData
+    useEffect(() => {
+
+    /**
+     * Fetch driver data based on user_id.
+     * @param userId - The user's ID.
+     */
+    const fetchDriverData = async (userId: number) => {
+        try {
+            const response = await fetch(`/api/drivers/user/${userId}`);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    console.warn("使用者尚未成為司機");
+                } else {
+                    throw new Error(`Failed to fetch driver data: ${response.statusText}`);
+                }
+            } else {
+                const data: Driver = await response.json();
+                setDriverData(data);
+                handleFetchDriverOrders(data.id);
+            }
+        } catch (error) {
+            console.error('Error fetching driver data:', error);
+        }
+    };
+
+        if (isClient && user && user.is_driver) {
+            fetchDriverData(user.id);
+        }
+    }, [isClient, user]);
+
+
+
+    /**
+     * Fetch unaccepted orders.
+     */
+    const handleFetchUnacceptedOrders = async () => {
+        try {
+            console.log('Fetching unaccepted orders...');
+            const response = await fetch(`/api/orders`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch unaccepted orders');
+            }
+            
+            let data: Order[] = await response.json();
+            console.log('Raw orders data:', data);
+            
+            data = data.filter((order) => 
+                order.order_status === "未接單")
+                .sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
+                
+            console.log('Filtered unaccepted orders:', data);
+            setUnacceptedOrders(data);
+        } catch (error) {
+            console.error('Error fetching unaccepted orders:', error);
+        }
+    };
+
+    /**
+     * Fetch accepted orders assigned to the driver.
+     * @param driverId - The driver's ID.
+     */
+    const handleFetchDriverOrders = async (driverId: number) => {
+        try {
+            const response = await fetch(`/api/drivers/${driverId}/orders`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch driver orders');
+            }
+            const data = await response.json();
+            setAcceptedOrders(data);
+        } catch (error) {
+            console.error('Error fetching driver orders:', error);
+        }
+    };
+
+
+
+    //New Version to handle accepting an order
+    
+    const handleAcceptOrder = async (orderId: string, service: string) => {
+        // First confirmation
+        const confirmFirst = window.confirm("您確定要接單嗎？");
+        if (!confirmFirst) return;
+
+        // Second confirmation
+        const confirmSecond = window.confirm("請再次確認：確定接單？");
+        if (!confirmSecond) return;
+        
+        if (!driverData || !driverData.id) {
+            console.error("Driver data is missing or incomplete");
+            return;
+        }
+        try {
+            const timestamp = new Date().toISOString();
+            const acceptOrder: DriverOrder = {
+                driver_id: driverData.id,
+                order_id: parseInt(orderId),  
+                action: "接單",
+                timestamp: timestamp,
+                previous_driver_id: undefined,
+                previous_driver_name: undefined,
+                previous_driver_phone: undefined,
+                service: service
+            }
+            await DriverService.handle_accept_order(service, parseInt(orderId), acceptOrder)
+            alert('接單成功');
+
+            handleFetchUnacceptedOrders(); 
+        } catch (error) {
+            console.error('Error accepting order:', error);
+            alert('接單失敗');
+        }
+    };
+
+    /**
+     * Handle transferring an order.
+     * @param orderId - The ID of the order to transfer.
+     * @param newDriverPhone - The phone number of the new driver.
+     */
+    const handleTransferOrder = async (orderId: string, newDriverPhone: string) => {      
+        try {
+            const response = await fetch(`/api/orders/${orderId}/transfer`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ current_driver_id: driverData?.id, new_driver_phone: newDriverPhone }),
+            });
+    
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to transfer order: ${errorText}`);
+            }
+    
+            alert('轉單成功，已成功交給目標司機');
+            await handleFetchUnacceptedOrders();
+
+        } catch (error) {
+
+
+            console.error('Error transferring order:', error);
+            alert('轉單失敗，請重新整理頁面讓表單重新出現');
+        }
+    };
+
+    /**
+     * Handle navigating to order details.
+     * @param orderId - The ID of the order to navigate to.
+     * @param driverId - The driver's ID.
+     */
+    const handleNavigate = (orderId: string, driverId: number) => {
+        router.push(`/navigation?orderId=${orderId}&driverId=${driverId}`);
+    };
+
+    /**
+     * Handle completing an order.
+     * @param orderId - The ID of the order to complete.
+     */
+    const handleCompleteOrder = async (orderId: string, service: string) => {     
+        try {
+            const response = await fetch(`/api/orders/${service}/${orderId}/complete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to complete order');
+            }
+
+            alert('訂單已完成');
+
+        } catch (error) {
+            console.error('Error completing order:', error);
+            alert('完成訂單失敗');
+        }
+    };
+
+    /**
+     * Handle applying to become a driver.
+     */
+    const handleApplyDriverClick = () => {
+        if (!user || user.id === 0 || user.name === 'empty' || user.phone === 'empty') {
+            alert('請先按右上角的登入');
+        } else {
+            setShowRegisterForm(true);
+        }
+    };
+
+    /**
+     * Handle successful driver data update.
+     * @param data - Updated driver data.
+     */
+    const handleUpdateSuccess = (data: Driver): void => {
+        setDriverData(data);
+
+        // Update user to driver
+        const updatedUser = { ...user, is_driver: true };
+        UserService.setLocalStorageUser(updatedUser);
+        setUser(updatedUser);
+        setShowRegisterForm(false);
+    };
+
+
+    /**
+     * Toggle the visibility of Unaccepted Orders List
+     */
+    const toggleUnacceptedOrders = () => {
+        setShowUnacceptedOrders(prev => {
+            const newState = !prev;
+            if (newState && unacceptedOrders.length === 0) {
+                handleFetchUnacceptedOrders();
+            }
+            return newState;
+        });
+    };
+
+    return (
+        <main className="min-h-screen bg-gradient-to-br from-orange-50 via-red-50 to-pink-50">
+            <ModernNavigation title="司機專區" showBackButton={true} />
+            
+            {/* Hero Section */}
+            <section className="py-20 bg-gradient-to-br from-orange-600 via-red-600 to-pink-600 relative overflow-hidden">
+                {/* Beautiful Background Pattern */}
+                <div className="absolute inset-0 opacity-20">
+                    {/* Floating delivery elements */}
+                    <div className="absolute top-16 left-16 w-24 h-24 bg-white shadow-2xl animate-pulse transform rotate-45"></div>
+                    <div className="absolute top-32 right-24 w-20 h-20 bg-white rounded-full shadow-xl animate-bounce" style={{animationDelay: '1s'}}></div>
+                    <div className="absolute bottom-24 left-1/4 w-16 h-16 bg-white shadow-lg animate-pulse transform -rotate-45" style={{animationDelay: '2s'}}></div>
+                    <div className="absolute bottom-16 right-1/3 w-12 h-12 bg-white rounded-full shadow-md animate-bounce" style={{animationDelay: '0.5s'}}></div>
+                    
+                    {/* Delivery/truck icons */}
+                    <div className="absolute top-20 right-16 w-8 h-8 text-white opacity-30">
+                        <svg fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M20 8H17V4H3C1.9 4 1 4.9 1 6V17H3C3 18.66 4.34 20 6 20S9 18.66 9 17H15C15 18.66 16.34 20 18 20S21 18.66 21 17H23V12L20 8ZM6 18.5C5.17 18.5 4.5 17.83 4.5 17S5.17 15.5 6 15.5 7.5 16.17 7.5 17 6.83 18.5 6 18.5ZM18 18.5C17.17 18.5 16.5 17.83 16.5 17S17.17 15.5 18 15.5 19.5 16.17 19.5 17 18.83 18.5 18 18.5ZM17 12V9.5H19.5L21.46 12H17Z"/>
+                        </svg>
+                    </div>
+                    <div className="absolute bottom-20 left-16 w-6 h-6 text-white opacity-30">
+                        <svg fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M20 8H17V4H3C1.9 4 1 4.9 1 6V17H3C3 18.66 4.34 20 6 20S9 18.66 9 17H15C15 18.66 16.34 20 18 20S21 18.66 21 17H23V12L20 8ZM6 18.5C5.17 18.5 4.5 17.83 4.5 17S5.17 15.5 6 15.5 7.5 16.17 7.5 17 6.83 18.5 6 18.5ZM18 18.5C17.17 18.5 16.5 17.83 16.5 17S17.17 15.5 18 15.5 19.5 16.17 19.5 17 18.83 18.5 18 18.5ZM17 12V9.5H19.5L21.46 12H17Z"/>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div className="max-w-4xl mx-auto px-6 text-center relative z-10">
+                    {/* Enhanced icon with glow effect */}
+                    <div className="w-32 h-32 mx-auto mb-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-sm border border-white border-opacity-30">
+                        <div className="w-20 h-20 bg-gradient-to-br from-white to-orange-100 rounded-full flex items-center justify-center shadow-inner">
+                            <svg className="w-10 h-10 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                            </svg>
+                        </div>
+                    </div>
+                    
+                    <h1 className="text-5xl md:text-6xl font-black text-white mb-6 drop-shadow-2xl">
+                        司機
+                        <span className="block bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">
+                            專區
+                        </span>
+                    </h1>
+                    <p className="text-xl md:text-2xl text-orange-100 max-w-3xl mx-auto leading-relaxed drop-shadow-lg">
+                        管理您的配送時間、訂單和導航服務
+                    </p>
+                </div>
+            </section>
+
+            {/* Reminder Alert */}
+            {showAddTimeTip && (
+                <div className="max-w-4xl mx-auto px-6 py-4">
+                    <div className="bg-blue-50 border border-blue-200 text-blue-800 px-6 py-4 rounded-xl relative" role="alert">
+                        <div className="flex items-start">
+                            <div className="flex-shrink-0">
+                                <svg className="w-5 h-5 text-blue-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <div className="ml-3 flex-1">
+                                <h3 className="text-lg font-semibold text-blue-800 mb-2">提醒</h3>
+                                <div className="text-sm text-blue-700 space-y-1">
+                                    <p>1. 如果有接單，請記得到新增時間去填寫可運送時間</p>
+                                    <p>2. 接單時請自行評估要運送多少商品 (以車子是否放得下為主要考量)</p>
+                                </div>
+                            </div>
+                            <button
+                                className="ml-4 flex-shrink-0 text-blue-400 hover:text-blue-600"
+                                onClick={() => setShowAddTimeTip(false)}
+                            >
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Main Content */}
+            <section className="py-16">
+                <div className="max-w-4xl mx-auto px-6">
+                    <div className="flex flex-col items-center space-y-6">
+                        {/* If user is not a driver */}
+                        {(isClient && !user?.is_driver) && (
+                            <Card className="w-full max-w-md hover:shadow-xl transition-all duration-300 border-2 border-orange-200 hover:border-orange-400 bg-white">
+                                <CardContent className="p-8 text-center">
+                                    <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center">
+                                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-2xl font-bold text-gray-900 mb-4">申請成為司機</h3>
+                                    <p className="text-gray-600 mb-6">開始您的配送服務，賺取額外收入</p>
+                                    <Button 
+                                        className="w-full bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+                                        onClick={handleApplyDriverClick}
+                                    >
+                                        申請司機
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* If user is a driver */}
+                        {isClient && user?.is_driver && driverData && (
+                            <div className="w-full space-y-6">
+                                {/* Driver Available Times */}
+                                <Card className="w-full hover:shadow-xl transition-all duration-300 border-2 border-green-200 hover:border-green-400 bg-white">
+                                    <CardHeader className="pb-4">
+                                        <CardTitle className="text-2xl font-bold text-center text-gray-900">
+                                            管理可用時間
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <DriverAvailableTimes driverId={driverData.id} />
+                                    </CardContent>
+                                </Card>
+
+                                {/* Action Buttons */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <Card className="hover:shadow-xl transition-all duration-300 border-2 border-blue-200 hover:border-blue-400 bg-white">
+                                        <CardContent className="p-6 text-center">
+                                            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
+                                                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                                </svg>
+                                            </div>
+                                            <h3 className="text-xl font-bold text-gray-900 mb-2">管理訂單和導航</h3>
+                                            <p className="text-gray-600 mb-4">查看已接訂單並進行導航</p>
+                                            <Button 
+                                                className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+                                                onClick={() => {
+                                                    setShowDriverOrders(true);
+                                                    if (driverData?.id) {
+                                                        handleFetchDriverOrders(driverData.id);
+                                                    }
+                                                }}
+                                            >
+                                                管理訂單
+                                            </Button>
+                                        </CardContent>
+                                    </Card>
+
+                                    <Card className="hover:shadow-xl transition-all duration-300 border-2 border-purple-200 hover:border-purple-400 bg-white">
+                                        <CardContent className="p-6 text-center">
+                                            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center">
+                                                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                            </div>
+                                            <h3 className="text-xl font-bold text-gray-900 mb-2">未接單表單</h3>
+                                            <p className="text-gray-600 mb-4">查看並接受新的配送訂單</p>
+                                            <Button 
+                                                className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+                                                onClick={toggleUnacceptedOrders}
+                                            >
+                                                {showUnacceptedOrders ? '隱藏未接單表單' : '取得未接單表單'}
+                                            </Button>
+                                        </CardContent>
+                                    </Card>
+                                </div>
+
+                                {/* Unaccepted Orders List */}
+                                {showUnacceptedOrders && (
+                                    <Card className="w-full hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-gray-400 bg-white">
+                                        <CardHeader>
+                                            <CardTitle className="text-2xl font-bold text-center text-gray-900">
+                                                未接單列表
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <OrderListWithPagination
+                                                orders={unacceptedOrders}
+                                                onAccept={handleAcceptOrder}
+                                                onTransfer={handleTransferOrder}
+                                                onNavigate={(orderId: string) => handleNavigate(orderId, driverData?.id || 0)}
+                                                onComplete={handleCompleteOrder}
+                                                driverId={driverData?.id || 0}
+                                            />
+                                        </CardContent>
+                                    </Card>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </section>
+
+            {/* Modern Footer */}
+            <footer className="bg-gradient-to-r from-orange-600 via-red-600 to-pink-600 text-white py-8">
+                <div className="max-w-4xl mx-auto px-6 text-center">
+                    <div className="flex items-center justify-center mb-4">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-white bg-opacity-20 rounded-lg"></div>
+                                    <Image src={`/newlogo.png?v=${Date.now()}`} alt="CloudTribe" width={40} height={40} className="relative z-10 mr-2 rounded-lg" />
+                        </div>
+                        <h3 className="text-lg font-black bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">CloudTribe</h3>
+                    </div>
+                    <p className="text-orange-100 text-sm mb-4 font-medium">
+                        連接真實世界的順路經濟平台
+                    </p>
+                    <p className="text-orange-200 text-xs">
+                        © 2025 CloudTribe. 保留所有權利。
+                    </p>
+                </div>
+            </footer>
+
+            {/* Apply for driver */}
+            <Sheet open={showRegisterForm} onOpenChange={setShowRegisterForm}>
+                <SheetContent 
+                    side="right"
+                    className="w-full sm:max-w-2xl p-0 sm:p-6"
+                >
+                    <SheetHeader className="p-6 sm:p-0">
+                        <SheetTitle>申請司機</SheetTitle>
+                        <SheetClose />
+                    </SheetHeader>
+                    <div className="overflow-y-auto h-[calc(100vh-80px)] p-6 sm:p-0">
+                        <DriverForm onClose={() => setShowRegisterForm(false)} onUpdateSuccess={handleUpdateSuccess} />
+                    </div>
+                </SheetContent>
+            </Sheet>
+
+            <Sheet open={showDriverOrders} onOpenChange={setShowDriverOrders}>
+                <SheetContent 
+                    side="right"
+                    className="w-full sm:max-w-2xl p-0 sm:p-6"
+                >
+                    <SheetHeader className="p-6 sm:p-0">
+                        <SheetTitle>我的訂單</SheetTitle>
+                        <SheetClose />
+                    </SheetHeader>
+                    <div className="overflow-y-auto h-[calc(100vh-80px)] p-6 sm:p-0">
+                        {driverData && 
+                            <DriverOrdersPage 
+                                driverData={driverData} 
+                                onAccept={handleAcceptOrder}
+                                onTransfer={handleTransferOrder}
+                                onNavigate={(orderId: string) => handleNavigate(orderId, driverData?.id || 0)}
+                                onComplete={handleCompleteOrder}
+                            />
+                        }
+                    </div>
+                </SheetContent>
+            </Sheet>
+        </main>
+    );
+
+};
+
+export default DriverPage;

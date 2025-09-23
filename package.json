@@ -1,0 +1,26 @@
+{
+    "name": "cloudtribe",
+    "version": "2.0.0",
+    "description": "順路經濟平台 - 連接真實世界的社群互助平台",
+    "author": "張瑞芳",
+    "license": "MIT",
+    "scripts": {
+        "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+        "dev:frontend": "cd client && npm run dev",
+        "dev:backend": "source venv/bin/activate && python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload",
+        "prod:frontend": "cd client && sudo rm -rf .next && npm install && npm run build && pm2 start npm --name \"frontend\" -- run start",
+        "prod:backend": "cd . && source venv/bin/activate && PYTHONPATH=backend pm2 start venv/bin/uvicorn --name fastapi-app --interpreter venv/bin/python3 -- backend.main:app --host 0.0.0.0 --port 8001",
+        "prod": "npm run prod:frontend && npm run prod:backend"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2",
+        "cross-env": "^7.0.3",
+        "dotenv-cli": "^5.0.0"
+    },
+    "dependencies": {
+        "@types/lodash.throttle": "^4.1.9",
+        "cloudinary": "^2.6.1",
+        "lodash.throttle": "^4.1.1",
+        "multer": "^2.0.0"
+    }
+}

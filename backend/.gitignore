@@ -1,0 +1,6 @@
+.env
+account.json
+
+logs/*
+
+/logs/

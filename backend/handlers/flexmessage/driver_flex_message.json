@@ -1,0 +1,54 @@
+{
+  "type": "bubble",
+  "header": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+      {
+        "type": "text",
+        "text": "司機功能",
+        "weight": "bold",
+        "size": "xl",
+        "align": "center",
+        "color": "#000000"
+      }
+    ],
+    "backgroundColor": "#EFEFEF"
+  },
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "spacing": "md",
+    "contents": [
+      {
+        "type": "button",
+        "action": {
+          "type": "postback",
+          "label": "查詢訂單",
+          "data": "action=query_order",
+          "displayText": "查詢訂單"
+        },
+        "style": "primary",
+        "color": "#709775"
+      },
+      {
+        "type": "button",
+        "action": {
+          "type": "postback",
+          "label": "設定司機條件",
+          "data": "action=set_conditions",
+          "displayText": "設定司機條件"
+        },
+        "style": "primary",
+        "color": "#709775"
+      }
+    ]
+  },
+  "footer": {
+    "type": "box",
+    "layout": "horizontal",
+    "spacing": "sm",
+    "contents": [],
+    "flex": 0
+  }
+}
