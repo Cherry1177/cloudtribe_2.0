@@ -8,7 +8,7 @@ import CartModal from "@/components/tribe_resident/buyer/CartModal";
 import AddItemForm from "@/components/tribe_resident/buyer/AddItemForm";
 import OrderManagement from "@/components/tribe_resident/buyer/OrderManagement";
 import "@/app/styles/globals.css";
-import { NavigationBar } from "@/components/NavigationBar";
+import { UnifiedNavigation } from "@/components/UnifiedNavigation";
 import { Button } from "@/components/ui/button";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faShoppingCart } from "@fortawesome/free-solid-svg-icons";
@@ -234,7 +234,7 @@ const BuyerPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
-      <NavigationBar />
+      <UnifiedNavigation title="部落居民 - 買家" />
       
       {/* Hero Section */}
       <section className="relative py-20 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 text-white">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { NavigationBar } from '@/components/NavigationBar';
+import { UnifiedNavigation } from '@/components/UnifiedNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -172,7 +172,7 @@ export default function OrderManagementPage() {
   if (loading) {
     return (
       <main className="min-h-screen bg-gray-50">
-        <NavigationBar />
+        <UnifiedNavigation title="訂單管理" showBackButton={true} backHref="/tribe_resident/seller" />
         <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -184,7 +184,7 @@ export default function OrderManagementPage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <NavigationBar />
+      <UnifiedNavigation title="訂單管理" showBackButton={true} backHref="/tribe_resident/seller" />
       
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white">

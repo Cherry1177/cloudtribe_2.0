@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input"
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrashAlt } from '@fortawesome/free-solid-svg-icons';
-import { NavigationBar } from'@/components/NavigationBar'
+import { UnifiedNavigation } from '@/components/UnifiedNavigation'
 import ConsumerService from '@/services/consumer/consumer'
 import UserService from '@/services/user/user'
 import SellerService from '@/services/seller/seller'
@@ -233,99 +233,148 @@ export default function ShoppingCart(){
   };
 
   return(
-    <div>
-      <NavigationBar/>
-      {message != 'empty' && 
-      <Alert className="bg-yellow-300 text-black w-fit text-center">
-        <AlertDescription className="lg:text-lg text-md">
-          {message}
-        </AlertDescription>
-      </Alert>}
-      <div className="flex flex-row justify-between">
-        <Button className="w-fit lg:m-8 m-4 px-4" onClick={storeChangedQuantity}>
-          <Link href="/consumer">
-            返回商品頁面
-          </Link>
-        </Button>
-        
-        
-        <Button className="w-fit lg:m-8 m-4 px-4" onClick={handlePurchaseButton}>購買勾選商品</Button>
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50">
+      <UnifiedNavigation title="購物車" showBackButton={true} backHref="/consumer" />
+      
+      {/* Alert Message */}
+      {message != 'empty' && (
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <Alert className="bg-gradient-to-r from-yellow-300 to-orange-300 text-black border-0 shadow-lg">
+            <AlertDescription className="lg:text-lg text-md font-medium">
+              {message}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <Button 
+            variant="outline" 
+            className="w-full sm:w-auto px-6 py-3 bg-white hover:bg-gray-50 border-2 border-gray-300 hover:border-gray-400 transition-all duration-200 hover:scale-105"
+            onClick={storeChangedQuantity}
+          >
+            <Link href="/consumer" className="flex items-center space-x-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span>返回商品頁面</span>
+            </Link>
+          </Button>
+          
+          <Button 
+            className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
+            onClick={handlePurchaseButton}
+          >
+            購買勾選商品
+          </Button>
+        </div>
       </div>
-      <div className="m-5">
-        <label className="block text-lg font-medium text-gray-700">取貨地點</label>
-        <div className="relative">
-          <Input
-            type="text"
-            value={searchInput}
-            onChange={handleInputChange}
-            placeholder="請輸入取貨地點"
-            className="w-full"
-          />
-          {predictions.length > 0 && (
-            <div className="absolute z-50 w-full bg-white mt-1 rounded-md shadow-lg max-h-60 overflow-auto">
-              {predictions.map((prediction) => {
-                const { businessName, address } = formatPredictionDisplay(prediction);
-                return (
-                  <div
-                    key={prediction.place_id}
-                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
-                    onClick={() => handlePlaceSelect(prediction.place_id)}
-                  >
-                    <div className="font-medium text-gray-900">{businessName}</div>
-                    <div className="text-sm text-gray-500">{address}</div>
-                  </div>
-                );
-              })}
+
+      {/* Pickup Location Section */}
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+          <label className="block text-xl font-bold text-gray-800 mb-4 flex items-center space-x-2">
+            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>取貨地點</span>
+          </label>
+          <div className="relative">
+            <Input
+              type="text"
+              value={searchInput}
+              onChange={handleInputChange}
+              placeholder="請輸入取貨地點"
+              className="w-full px-4 py-3 text-lg border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+            />
+            {predictions.length > 0 && (
+              <div className="absolute z-50 w-full bg-white mt-2 rounded-lg shadow-xl border border-gray-200 max-h-60 overflow-auto">
+                {predictions.map((prediction) => {
+                  const { businessName, address } = formatPredictionDisplay(prediction);
+                  return (
+                    <div
+                      key={prediction.place_id}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-200"
+                      onClick={() => handlePlaceSelect(prediction.place_id)}
+                    >
+                      <div className="font-semibold text-gray-900">{businessName}</div>
+                      <div className="text-sm text-gray-600">{address}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {location != 'empty' && (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-sm font-medium text-green-800">已選擇地點:</span>
+              </div>
+              <div className="text-sm text-green-700 mt-1">{location}</div>
             </div>
           )}
         </div>
-        {location != 'empty' && (
-          <div className="mt-2 text-sm text-gray-600">
-            選擇的地點: {location}
-          </div>
-        )}
       </div>
 
       
-      <div className="grid lg:grid-cols-3 grid-cols-1 items-center">
-        {cart.map((item)=>
-          <div key={item.id.toString()} className="flex flex-row w-full lg:h-[150px] h-[100px] items-center text-center space-x-2 p-4 lg:border-4">
-            <div className="w-1/12">
-              <Checkbox 
-                id={`check-${item.id}`} 
-                className="lg:h-6 lg:w-6"
-                onClick={handleCheckBox}/>
-            </div>
-            <div className="w-3/12">
-              <img
-                src={item.img_url} 
-                alt={item.name} 
-   
-                className="w-full py-2 lg:h-[145px] h-[95px]"
-              />
-            </div> 
-            <div className="flex flex-col w-5/12 text-center">
-              <p className="lg:text-2xl line-clamp-2 text-pretty">{item.name}</p>
-              <p className="lg:text-lg text-red-600">${item.price.toString()} / {item.unit}</p>
-              
-            </div>
-            <Input
-              type="number" 
-              id={`quantity-${item.id}`}
-              className="w-2/12 text-center lg:h-8 lg:text-lg"
-              defaultValue={item.quantity.toString()} 
-              onChange={handleQuantityInput}
-              min={1}/>
-            <Button 
-              variant="outline" 
-              id={`delete-${item.id}`}
-              className="bg-black text-white w-1/12"
-              onClick={() => handleDeleteButton(item.id)}>
-              <FontAwesomeIcon icon={faTrashAlt} className="text-white"/>
-            </Button>
+      {/* Cart Items Section */}
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center space-x-2">
+            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-2.5 5M7 13l2.5 5m6-5v6a2 2 0 01-2 2H9a2 2 0 01-2-2v-6m8 0V9a2 2 0 00-2-2H9a2 2 0 00-2 2v4.01" />
+            </svg>
+            <span>購物車商品</span>
+          </h2>
+          
+          <div className="grid lg:grid-cols-3 grid-cols-1 gap-6">
+            {cart.map((item)=>
+              <div key={item.id.toString()} className="flex flex-row w-full lg:h-[150px] h-[120px] items-center bg-gray-50 rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow duration-200">
+                <div className="w-1/12 flex justify-center">
+                  <Checkbox 
+                    id={`check-${item.id}`} 
+                    className="h-5 w-5"
+                    onClick={handleCheckBox}/>
+                </div>
+                <div className="w-3/12">
+                  <img
+                    src={item.img_url} 
+                    alt={item.name} 
+                    className="w-full h-full object-cover rounded-lg shadow-sm"
+                  />
+                </div> 
+                <div className="flex flex-col w-5/12 px-3">
+                  <p className="text-sm lg:text-base font-semibold text-gray-800 mb-1 line-clamp-2">{item.name}</p>
+                  <p className="text-xs lg:text-sm text-red-600 font-medium">${item.price.toString()} / {item.unit}</p>
+                </div>
+                <div className="w-2/12">
+                  <Input
+                    type="number" 
+                    id={`quantity-${item.id}`}
+                    className="w-full text-center h-8 text-sm border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    defaultValue={item.quantity.toString()} 
+                    onChange={handleQuantityInput}
+                    min={1}/>
+                </div>
+                <div className="w-1/12 flex justify-center">
+                  <Button 
+                    variant="outline" 
+                    id={`delete-${item.id}`}
+                    className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 border-red-300 hover:border-red-400"
+                    onClick={() => handleDeleteButton(item.id)}>
+                    <FontAwesomeIcon icon={faTrashAlt} className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
-
-        )}
+        </div>
       </div>
       
     </div>

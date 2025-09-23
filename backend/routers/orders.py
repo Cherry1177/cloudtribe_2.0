@@ -116,6 +116,169 @@ async def create_order(order: DetailedOrder, conn: Connection = Depends(get_db),
     finally:
         cur.close()
 
+@router.post("/cleanup-expired")
+async def cleanup_expired_orders(conn: Connection = Depends(get_db)):
+    """
+    Mark orders older than 2 hours as expired.
+    """
+    cur = conn.cursor()
+    try:
+        # Mark orders as expired if they're older than 2 hours and still unaccepted
+        cur.execute(
+            """
+            UPDATE orders 
+            SET order_status = '已過期'
+            WHERE order_status = '未接單' 
+            AND timestamp < NOW() - INTERVAL '2 hours'
+            RETURNING id, timestamp
+            """
+        )
+        expired_orders = cur.fetchall()
+        conn.commit()
+        
+        expired_count = len(expired_orders)
+        if expired_count > 0:
+            log_event("ORDERS_EXPIRED", {
+                "expired_count": expired_count,
+                "expired_order_ids": [order[0] for order in expired_orders]
+            })
+        
+        return {
+            "status": "success", 
+            "expired_count": expired_count,
+            "message": f"Marked {expired_count} orders as expired"
+        }
+    except Exception as e:
+        conn.rollback()
+        logging.error("Error cleaning up expired orders: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to cleanup expired orders") from e
+    finally:
+        cur.close()
+
+@router.post("/handle-expired/{order_id}")
+async def handle_expired_order(
+    order_id: int, 
+    action: str,  # 'return_to_seller', 'dispose', 'donate'
+    reason: str = "",
+    conn: Connection = Depends(get_db)
+):
+    """
+    Handle expired products - what driver should do with them.
+    """
+    cur = conn.cursor()
+    try:
+        # Validate the action
+        valid_actions = ['return_to_seller', 'dispose', 'donate', 'customer_still_wants']
+        if action not in valid_actions:
+            raise HTTPException(status_code=400, detail="Invalid action")
+        
+        # Update order status based on action
+        status_mapping = {
+            'return_to_seller': '已退回賣家',
+            'dispose': '已丟棄',
+            'donate': '已捐贈',
+            'customer_still_wants': '已完成'
+        }
+        
+        new_status = status_mapping[action]
+        
+        cur.execute(
+            """
+            UPDATE orders 
+            SET order_status = %s, note = CONCAT(COALESCE(note, ''), ' [過期處理: ', %s, ' - ', %s, ']')
+            WHERE id = %s
+            RETURNING buyer_id, total_price
+            """,
+            (new_status, action, reason, order_id)
+        )
+        
+        result = cur.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        buyer_id, total_price = result
+        
+        # If disposing or donating, process refund
+        if action in ['dispose', 'donate']:
+            # Here you could integrate with payment system for refunds
+            log_event("REFUND_PROCESSED", {
+                "order_id": order_id,
+                "buyer_id": buyer_id,
+                "amount": total_price,
+                "reason": f"Product expired - {action}"
+            })
+        
+        conn.commit()
+        
+        log_event("EXPIRED_ORDER_HANDLED", {
+            "order_id": order_id,
+            "action": action,
+            "reason": reason,
+            "new_status": new_status
+        })
+        
+        return {
+            "status": "success",
+            "message": f"Order {order_id} handled: {action}",
+            "new_status": new_status
+        }
+        
+    except HTTPException as he:
+        conn.rollback()
+        raise he
+    except Exception as e:
+        conn.rollback()
+        logging.error("Error handling expired order: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to handle expired order") from e
+    finally:
+        cur.close()
+
+@router.post("/{service}/{order_id}/pickup")
+async def confirm_pickup(service: str, order_id: int, conn: Connection = Depends(get_db)):
+    """
+    Confirm that driver has picked up the order and update status to '配送中'.
+    """
+    cur = conn.cursor()
+    try:
+        # Update order status to indicate pickup confirmed
+        cur.execute(
+            """
+            UPDATE orders 
+            SET order_status = '配送中'
+            WHERE id = %s AND order_status = '接單'
+            RETURNING id, buyer_name
+            """,
+            (order_id,)
+        )
+        
+        result = cur.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="Order not found or not in correct status")
+        
+        conn.commit()
+        
+        log_event("ORDER_PICKUP_CONFIRMED", {
+            "order_id": order_id,
+            "service": service,
+            "status": "配送中"
+        })
+        
+        return {
+            "status": "success",
+            "message": f"Order {order_id} pickup confirmed - now in delivery",
+            "new_status": "配送中"
+        }
+        
+    except HTTPException as he:
+        conn.rollback()
+        raise he
+    except Exception as e:
+        conn.rollback()
+        logging.error("Error confirming pickup: %s", str(e))
+        raise HTTPException(status_code=500, detail="Failed to confirm pickup") from e
+    finally:
+        cur.close()
+
 @router.get("/", response_model=List[Order])
 async def get_orders(conn: Connection = Depends(get_db), request: Request = None):
     """
@@ -132,10 +295,41 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
             "endpoint": str(request.url) if request else "N/A",
             "client_ip": request.client.host if request else "N/A"
         })
+        
+        # First, automatically mark expired orders
+        # For unaccepted orders - mark as expired
+        cur.execute(
+            """
+            UPDATE orders 
+            SET order_status = '已過期'
+            WHERE order_status = '未接單' 
+            AND timestamp < NOW() - INTERVAL '2 hours'
+            """
+        )
+        
+        # For accepted orders - mark as needing driver action if expired during delivery
+        cur.execute(
+            """
+            UPDATE orders 
+            SET order_status = '配送逾時'
+            WHERE order_status = '接單' 
+            AND timestamp < NOW() - INTERVAL '4 hours'
+            """
+        )
+        expired_count = cur.rowcount
+        if expired_count > 0:
+            conn.commit()
+            log_event("AUTO_EXPIRED_ORDERS", {
+                "expired_count": expired_count,
+                "during": "fetch_orders"
+            })
+        
+        # Then fetch all orders (excluding expired ones for drivers)
         cur.execute("""
             SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price, 
                 order_type, order_status, note, timestamp
             FROM orders
+            WHERE order_status != '已過期'
         """)
         orders = cur.fetchall()
         order_list = []
@@ -706,43 +900,141 @@ async def get_order(order_id: int, conn: Connection = Depends(get_db), request: 
             "endpoint": str(request.url) if request else "N/A",
             "client_ip": request.client.host if request else "N/A"
         })
-        cur.execute("SELECT * FROM orders WHERE id = %s", (order_id,))
-        order = cur.fetchone()
-        if not order:
+        
+        # First, check if this order was accepted by a driver and determine service type
+        cur.execute("SELECT service FROM driver_orders WHERE order_id = %s LIMIT 1", (order_id,))
+        service_result = cur.fetchone()
+        service_type = service_result[0] if service_result else None
+        
+        order_data = None
+        
+        if service_type == "agricultural_product":
+            # This is an agricultural product order
+            cur.execute("""
+                SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone, 
+                       agri_p_o.end_point, agri_p_o.status, agri_p_o.note, agri_p_o.timestamp,
+                       agri_p.id, agri_p.name, agri_p.price, agri_p_o.quantity, agri_p.img_link, 
+                       agri_p_o.starting_point, agri_p.category
+                FROM agricultural_product_order as agri_p_o
+                JOIN agricultural_produce as agri_p on agri_p.id = agri_p_o.produce_id
+                WHERE agri_p_o.id = %s
+            """, (order_id,))
+            
+            agri_order = cur.fetchone()
+            if agri_order:
+                # Calculate total price for agricultural product
+                total_price = agri_order[10] * agri_order[11]  # price * quantity
+                
+                order_data = {
+                    "id": agri_order[0],
+                    "buyer_id": agri_order[1],
+                    "buyer_name": agri_order[2],
+                    "buyer_phone": agri_order[3],
+                    "location": agri_order[4],  # end_point (delivery location)
+                    "is_urgent": False,
+                    "total_price": float(total_price),
+                    "order_type": "購買類",
+                    "order_status": agri_order[5],
+                    "note": agri_order[6] or "",
+                    "service": "agricultural_product",
+                    "timestamp": agri_order[7],
+                    "items": [{
+                        "item_id": agri_order[8],
+                        "item_name": agri_order[9],
+                        "price": float(agri_order[10]),
+                        "quantity": int(agri_order[11]),
+                        "img": agri_order[12],
+                        "location": agri_order[13],  # starting_point (pickup location)
+                        "category": agri_order[14]
+                    }]
+                }
+        
+        elif service_type == "necessities" or service_type is None:
+            # This is a necessities order or unaccepted order, check orders table
+            cur.execute("SELECT * FROM orders WHERE id = %s", (order_id,))
+            order = cur.fetchone()
+            
+            if order:
+                cur.execute("SELECT * FROM order_items WHERE order_id = %s", (order_id,))
+                items = cur.fetchall()
+
+                order_data = {
+                    "id": order[0],
+                    "buyer_id": order[1],
+                    "buyer_name": order[2],  # str
+                    "buyer_phone": order[3],  # str
+                    "seller_id": int(order[4]),  # int
+                    "seller_name": order[5],  # str
+                    "seller_phone": order[6],  # str
+                    "date": order[7].isoformat(),  # str
+                    "time": order[8].isoformat(),  # str
+                    "location": order[9],
+                    "is_urgent": bool(order[10]),  # bool
+                    "total_price": float(order[11]),  # float
+                    "order_type": order[12],
+                    "order_status": order[13],
+                    "note": order[14],
+                    "shipment_count": order[15],
+                    "required_orders_count": order[16],
+                    "previous_driver_id": order[17],
+                    "previous_driver_name": order[18],
+                    "previous_driver_phone": order[19],
+                    "service": "necessities",
+                    "items": [{"order_id": item[1], "item_id": item[2], "item_name": item[3], "price": float(item[4]), "quantity": int(item[5]), 
+                               "img": str(item[6]),"location": str(item[7]),"category":str(item[8])} for item in items]
+                }
+            else:
+                # If not in orders table, try agricultural_product_order as fallback
+                cur.execute("""
+                    SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone, 
+                           agri_p_o.end_point, agri_p_o.status, agri_p_o.note, agri_p_o.timestamp,
+                           agri_p.id, agri_p.name, agri_p.price, agri_p_o.quantity, agri_p.img_link, 
+                           agri_p_o.starting_point, agri_p.category
+                    FROM agricultural_product_order as agri_p_o
+                    JOIN agricultural_produce as agri_p on agri_p.id = agri_p_o.produce_id
+                    WHERE agri_p_o.id = %s
+                """, (order_id,))
+                
+                agri_order = cur.fetchone()
+                if agri_order:
+                    # Calculate total price for agricultural product
+                    total_price = agri_order[10] * agri_order[11]  # price * quantity
+                    
+                    order_data = {
+                        "id": agri_order[0],
+                        "buyer_id": agri_order[1],
+                        "buyer_name": agri_order[2],
+                        "buyer_phone": agri_order[3],
+                        "location": agri_order[4],  # end_point (delivery location)
+                        "is_urgent": False,
+                        "total_price": float(total_price),
+                        "order_type": "購買類",
+                        "order_status": agri_order[5],
+                        "note": agri_order[6] or "",
+                        "service": "agricultural_product",
+                        "timestamp": agri_order[7],
+                        "items": [{
+                            "item_id": agri_order[8],
+                            "item_name": agri_order[9],
+                            "price": float(agri_order[10]),
+                            "quantity": int(agri_order[11]),
+                            "img": agri_order[12],
+                            "location": agri_order[13],  # starting_point (pickup location)
+                            "category": agri_order[14]
+                        }]
+                    }
+        
+        if not order_data:
             raise HTTPException(status_code=404, detail="訂單不存在")
-
-        cur.execute("SELECT * FROM order_items WHERE order_id = %s", (order_id,))
-        items = cur.fetchall()
-
-        order_data = {
-            "id": order[0],
-            "buyer_id": order[1],
-            "buyer_name": order[2],  # str
-            "buyer_phone": order[3],  # str
-            "seller_id": int(order[4]),  # int
-            "seller_name": order[5],  # str
-            "seller_phone": order[6],  # str
-            "date": order[7].isoformat(),  # str
-            "time": order[8].isoformat(),  # str
-            "location": order[9],
-            "is_urgent": bool(order[10]),  # bool
-            "total_price": float(order[11]),  # float
-            "order_type": order[12],
-            "order_status": order[13],
-            "note": order[14],
-            "shipment_count": order[15],
-            "required_orders_count": order[16],
-            "previous_driver_id": order[17],
-            "previous_driver_name": order[18],
-            "previous_driver_phone": order[19],
-            "items": [{"order_id": item[1], "item_id": item[2], "item_name": item[3], "price": float(item[4]), "quantity": int(item[5]), 
-                       "img": str(item[6]),"location": str(item[7]),"category":str(item[8])} for item in items]
-        }
+        
         log_event("FETCH_ORDER_SUCCESS", {
             "order_id": order_id,
+            "service": order_data.get("service", "unknown"),
+            "total_price": order_data["total_price"],
             "status": "success"
         })
         return order_data
+        
     except HTTPException as e:
         log_event("FETCH_ORDER_FAILED", {
             "order_id": order_id,
@@ -755,6 +1047,156 @@ async def get_order(order_id: int, conn: Connection = Depends(get_db), request: 
             "error": str(e)
         })
         raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        cur.close()
+
+@router.get("/{order_id}/driver-info")
+async def get_order_driver_info(order_id: int, conn: Connection = Depends(get_db)):
+    """
+    Get driver information for a specific order.
+    Args:
+        order_id (int): The ID of the order.
+        conn (Connection): The database connection.
+    Returns:
+        dict: Driver information if order is accepted by a driver.
+    """
+    cur = conn.cursor()
+    try:
+        # Get driver info from driver_orders and drivers tables
+        cur.execute("""
+            SELECT d.driver_name, d.driver_phone, dro.timestamp, dro.service, d.id as driver_id, u.location as driver_location
+            FROM driver_orders dro
+            JOIN drivers d ON dro.driver_id = d.id
+            JOIN users u ON d.user_id = u.id
+            WHERE dro.order_id = %s AND dro.action = '接單'
+            ORDER BY dro.timestamp DESC
+            LIMIT 1
+        """, (order_id,))
+        
+        driver_info = cur.fetchone()
+        if not driver_info:
+            raise HTTPException(status_code=404, detail="此訂單尚未被司機接單")
+        
+        return {
+            "driver_name": driver_info[0],
+            "driver_phone": driver_info[1],
+            "accepted_at": driver_info[2].isoformat(),
+            "service": driver_info[3],
+            "driver_id": driver_info[4],
+            "driver_location": driver_info[5]
+        }
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logging.error("Error fetching driver info: %s", str(e))
+        raise HTTPException(status_code=500, detail="獲取司機資訊失敗") from e
+    finally:
+        cur.close()
+
+@router.get("/buyer/{buyer_id}")
+async def get_buyer_orders(buyer_id: int, conn: Connection = Depends(get_db)):
+    """
+    Get all orders for a specific buyer.
+    Args:
+        buyer_id (int): The ID of the buyer.
+        conn (Connection): The database connection.
+    Returns:
+        List[dict]: List of orders for the buyer.
+    """
+    cur = conn.cursor()
+    try:
+        order_list = []
+        
+        # Get regular orders
+        cur.execute("""
+            SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price,
+                   order_type, order_status, note, timestamp
+            FROM orders
+            WHERE buyer_id = %s
+            ORDER BY timestamp DESC
+        """, (buyer_id,))
+        
+        orders = cur.fetchall()
+        for order in orders:
+            # Get order items
+            cur.execute("SELECT item_id, item_name, price, quantity, img, location, category FROM order_items WHERE order_id = %s", (order[0],))
+            items = cur.fetchall()
+            
+            order_dict = {
+                "id": order[0],
+                "buyer_id": order[1],
+                "buyer_name": order[2],
+                "buyer_phone": order[3],
+                "location": order[4],
+                "is_urgent": bool(order[5]),
+                "total_price": float(order[6]),
+                "order_type": order[7],
+                "order_status": order[8],
+                "note": order[9],
+                "timestamp": order[10].isoformat() if order[10] else None,
+                "service": "necessities",
+                "items": [{
+                    "item_id": item[0],
+                    "item_name": item[1],
+                    "price": float(item[2]),
+                    "quantity": int(item[3]),
+                    "img": item[4],
+                    "location": item[5],
+                    "category": item[6]
+                } for item in items]
+            }
+            order_list.append(order_dict)
+        
+        # Get agricultural product orders
+        cur.execute("""
+            SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone,
+                   agri_p_o.end_point, agri_p_o.status, agri_p_o.note, agri_p_o.timestamp,
+                   agri_p.id, agri_p.name, agri_p.price, agri_p_o.quantity, agri_p.img_link,
+                   agri_p_o.starting_point, agri_p.category
+            FROM agricultural_product_order as agri_p_o
+            JOIN agricultural_produce as agri_p on agri_p.id = agri_p_o.produce_id
+            WHERE agri_p_o.buyer_id = %s
+            ORDER BY agri_p_o.timestamp DESC
+        """, (buyer_id,))
+        
+        agri_orders = cur.fetchall()
+        for agri_order in agri_orders:
+            total_price = agri_order[10] * agri_order[11]  # price * quantity
+            
+            agri_order_dict = {
+                "id": agri_order[0],
+                "buyer_id": agri_order[1],
+                "buyer_name": agri_order[2],
+                "buyer_phone": agri_order[3],
+                "location": agri_order[4],  # end_point
+                "is_urgent": False,
+                "total_price": float(total_price),
+                "order_type": "購買類",
+                "order_status": agri_order[5],  # status
+                "note": agri_order[6] or "",
+                "timestamp": agri_order[7].isoformat() if agri_order[7] else None,
+                "service": "agricultural_product",
+                "items": [{
+                    "item_id": agri_order[8],
+                    "item_name": agri_order[9],
+                    "price": float(agri_order[10]),
+                    "quantity": int(agri_order[11]),
+                    "img": agri_order[12],
+                    "location": agri_order[13],  # starting_point
+                    "category": agri_order[14]
+                }]
+            }
+            order_list.append(agri_order_dict)
+        
+        # Sort by timestamp (newest first)
+        order_list.sort(key=lambda x: x['timestamp'] or '', reverse=True)
+        
+        return order_list
+        
+    except Exception as e:
+        logging.error("Error fetching buyer orders: %s", str(e))
+        raise HTTPException(status_code=500, detail="獲取訂單失敗") from e
     finally:
         cur.close()
 

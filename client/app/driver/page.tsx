@@ -6,7 +6,7 @@ import DriverForm from "@/components/driver/DriverForm";
 import OrderListWithPagination from "@/components/driver/OrderListWithPagination";
 import DriverOrdersPage from "@/components/driver/DriverOrdersPage";
 import DriverAvailableTimes from "@/components/driver/DriverAvailableTimes"; 
-import { ModernNavigation } from "@/components/ModernNavigation";
+import { UnifiedNavigation } from "@/components/UnifiedNavigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet";
@@ -59,29 +59,37 @@ const DriverPage: React.FC = () => {
 
     // use user.id to get driverData
     useEffect(() => {
-
-    /**
-     * Fetch driver data based on user_id.
-     * @param userId - The user's ID.
-     */
-    const fetchDriverData = async (userId: number) => {
-        try {
-            const response = await fetch(`/api/drivers/user/${userId}`);
-            if (!response.ok) {
-                if (response.status === 404) {
-                    console.warn("使用者尚未成為司機");
+        /**
+         * Fetch driver data based on user_id.
+         * @param userId - The user's ID.
+         */
+        const fetchDriverData = async (userId: number) => {
+            try {
+                console.log(`Fetching driver data for user ID: ${userId}`);
+                const response = await fetch(`/api/drivers/user/${userId}`);
+                console.log(`Driver API response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        console.warn("使用者尚未成為司機 - 需要重新申請");
+                        // Reset user.is_driver to false since there's no driver record
+                        const updatedUser = { ...user, is_driver: false };
+                        UserService.setLocalStorageUser(updatedUser);
+                        setUser(updatedUser);
+                    } else {
+                        const errorText = await response.text();
+                        console.error(`Failed to fetch driver data: ${response.status} - ${errorText}`);
+                    }
                 } else {
-                    throw new Error(`Failed to fetch driver data: ${response.statusText}`);
+                    const data: Driver = await response.json();
+                    console.log('Driver data loaded:', data);
+                    setDriverData(data);
+                    handleFetchDriverOrders(data.id);
                 }
-            } else {
-                const data: Driver = await response.json();
-                setDriverData(data);
-                handleFetchDriverOrders(data.id);
+            } catch (error) {
+                console.error('Error fetching driver data:', error);
             }
-        } catch (error) {
-            console.error('Error fetching driver data:', error);
-        }
-    };
+        };
 
         if (isClient && user && user.is_driver) {
             fetchDriverData(user.id);
@@ -91,7 +99,7 @@ const DriverPage: React.FC = () => {
 
 
     /**
-     * Fetch unaccepted orders.
+     * Fetch unaccepted orders and filter out expired ones.
      */
     const handleFetchUnacceptedOrders = async () => {
         try {
@@ -104,11 +112,38 @@ const DriverPage: React.FC = () => {
             let data: Order[] = await response.json();
             console.log('Raw orders data:', data);
             
-            data = data.filter((order) => 
-                order.order_status === "未接單")
-                .sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
+            // Filter for unaccepted orders and remove expired ones
+            const now = new Date();
+            const ORDER_EXPIRY_HOURS = 2; // Orders expire after 2 hours
+            
+            data = data.filter((order) => {
+                // Only show unaccepted orders
+                if (order.order_status !== "未接單") return false;
                 
-            console.log('Filtered unaccepted orders:', data);
+                // Check if order is expired
+                if (order.timestamp) {
+                    const orderTime = new Date(order.timestamp);
+                    const hoursOld = (now.getTime() - orderTime.getTime()) / (1000 * 60 * 60);
+                    
+                    if (hoursOld > ORDER_EXPIRY_HOURS) {
+                        console.log(`Order ${order.id} is ${hoursOld.toFixed(1)} hours old - filtering out`);
+                        return false;
+                    }
+                }
+                
+                return true;
+            }).sort((a, b) => {
+                // Sort by urgency first, then by timestamp (newest first)
+                if (b.is_urgent !== a.is_urgent) {
+                    return (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0);
+                }
+                // If both urgent or both not urgent, sort by timestamp
+                const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+                const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+                return timeB - timeA;
+            });
+                
+            console.log('Filtered unaccepted orders (excluding expired):', data);
             setUnacceptedOrders(data);
         } catch (error) {
             console.error('Error fetching unaccepted orders:', error);
@@ -277,7 +312,7 @@ const DriverPage: React.FC = () => {
 
     return (
         <main className="min-h-screen bg-gradient-to-br from-orange-50 via-red-50 to-pink-50">
-            <ModernNavigation title="司機專區" showBackButton={true} />
+            <UnifiedNavigation title="司機專區" showBackButton={true} />
             
             {/* Hero Section */}
             <section className="py-20 bg-gradient-to-br from-orange-600 via-red-600 to-pink-600 relative overflow-hidden">
@@ -358,8 +393,9 @@ const DriverPage: React.FC = () => {
             <section className="py-16">
                 <div className="max-w-4xl mx-auto px-6">
                     <div className="flex flex-col items-center space-y-6">
-                        {/* If user is not a driver */}
-                        {(isClient && !user?.is_driver) && (
+
+                        {/* If user is not a driver OR is marked as driver but has no driver data */}
+                        {(isClient && (!user?.is_driver || (user?.is_driver && !driverData))) && (
                             <Card className="w-full max-w-md hover:shadow-xl transition-all duration-300 border-2 border-orange-200 hover:border-orange-400 bg-white">
                                 <CardContent className="p-8 text-center">
                                     <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center">

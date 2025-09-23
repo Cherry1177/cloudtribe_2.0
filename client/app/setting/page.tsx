@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { LOCATIONS } from '@/constants/constants';
 import UserService from '@/services/user/user';
-import { NavigationBar } from '@/components/NavigationBar';
+import { UnifiedNavigation } from '@/components/UnifiedNavigation';
 import { User } from '@/interfaces/user/user';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -103,7 +103,7 @@ export default function Page() {
 
   return (
     <>
-      <NavigationBar />
+      <UnifiedNavigation title="設定" />
 
       <div className="min-h-screen bg-gray-50 py-6 px-4">
         {showModal && (

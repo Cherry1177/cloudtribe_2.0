@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { NavigationBar } from "@/components/NavigationBar";
+import { UnifiedNavigation } from "@/components/UnifiedNavigation";
 import PaginationDemo from "@/components/tribe_resident/buyer/PaginationDemo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -109,7 +109,7 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50">
-      <NavigationBar /> 
+      <UnifiedNavigation title="商品瀏覽" /> 
       
       {/* Hero Section */}
       <header className="relative w-full bg-gradient-to-r from-green-600 via-green-700 to-green-800 text-white shadow-2xl">

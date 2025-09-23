@@ -4,12 +4,12 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ModernNavigation } from '@/components/ModernNavigation';
+import { UnifiedNavigation } from '@/components/UnifiedNavigation';
 
 export default function BuyerOptionsPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
-      <ModernNavigation title="買家專區" showBackButton={true} />
+      <UnifiedNavigation title="買家專區" showBackButton={true} />
       
       {/* Hero Section */}
       <section className="py-20 bg-gradient-to-br from-green-600 via-emerald-600 to-teal-600 relative overflow-hidden">

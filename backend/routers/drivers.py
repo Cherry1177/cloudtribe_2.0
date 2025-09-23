@@ -95,10 +95,35 @@ async def create_driver(driver: Driver, conn: Connection = Depends(get_db)):
             raise HTTPException(status_code=409, detail="使用者已經是司機")
 
         # Check if driver_phone already exists
-        cur.execute("SELECT id FROM drivers WHERE driver_phone = %s", (driver.driver_phone,))
-        phone_exists = cur.fetchone()
-        if phone_exists:
-            raise HTTPException(status_code=409, detail="電話號碼已存在")
+        cur.execute("SELECT id, user_id FROM drivers WHERE driver_phone = %s", (driver.driver_phone,))
+        existing_phone_record = cur.fetchone()
+        if existing_phone_record:
+            existing_driver_id, existing_user_id = existing_phone_record
+            # If the existing record has no user_id or is orphaned, we can claim it
+            if existing_user_id is None or existing_user_id == 0:
+                # Update the existing record with the current user_id
+                cur.execute(
+                    "UPDATE drivers SET user_id = %s, driver_name = %s WHERE id = %s",
+                    (driver.user_id, driver.driver_name, existing_driver_id)
+                )
+                conn.commit()
+                log_event("DRIVER_RECORD_CLAIMED", {
+                    "driver_id": existing_driver_id,
+                    "user_id": driver.user_id,
+                    "status": "success"
+                })
+                return {"status": "success", "driver_id": existing_driver_id}
+            else:
+                # Check if it's the same user trying to re-register
+                if existing_user_id == driver.user_id:
+                    log_event("DRIVER_ALREADY_EXISTS", {
+                        "driver_id": existing_driver_id,
+                        "user_id": driver.user_id,
+                        "status": "already_exists"
+                    })
+                    return {"status": "success", "driver_id": existing_driver_id}
+                else:
+                    raise HTTPException(status_code=409, detail="電話號碼已存在")
 
         # Insert the new driver
         cur.execute(

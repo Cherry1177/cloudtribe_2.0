@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react"
 import { SellerDialog } from "@/components/tribe_resident/seller/SellerDialog"
 import { ProductTable } from "@/components/tribe_resident/seller/ProductTable"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { NavigationBar } from "@/components/NavigationBar"
+import { UnifiedNavigation } from "@/components/UnifiedNavigation"
 import UseService from "@/services/user/user"
 import SellerService from "@/services/seller/seller"
 import DriverService from "@/services/driver/driver"
@@ -52,7 +52,7 @@ export default function Page(){
   }
   return(
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
-      <NavigationBar/> 
+      <UnifiedNavigation title="部落居民 - 賣家" /> 
       
       {/* Header Section */}
       <section className="py-8 bg-gradient-to-r from-[#003049] via-[#1d3557] to-[#457b9d]">

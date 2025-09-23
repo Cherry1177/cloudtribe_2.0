@@ -1,7 +1,7 @@
 import React from 'react';
 import { AppProps } from 'next/app';
 import { AuthProvider } from '@/components/lib/AuthProvider';
-import { NavigationBar }from '@/components/NavigationBar';
+import { UnifiedNavigation } from '@/components/UnifiedNavigation';
 import '../styles/globals.css';
 
 function MyApp({ Component, pageProps }: AppProps) {
@@ -13,7 +13,7 @@ function MyApp({ Component, pageProps }: AppProps) {
 
   return (
     <AuthProvider>
-      <NavigationBar />
+      <UnifiedNavigation title="CloudTribe" />
       <Component {...pageProps} />
     </AuthProvider>
   );

@@ -20,43 +20,56 @@ interface OrderManagementProps {
 const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orders, fetchOrders }) => {
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [user, setUser] = useState(UserService.getLocalStorageUser());
+  const [loading, setLoading] = useState(false);
 
   // State variables for order filtering
-  const [orderStatus, setOrderStatus] = useState<string>("未接單");
+  const [orderStatus, setOrderStatus] = useState<string>("all");
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [error, setError] = useState<string>("");
 
-
-  // Filter orders based on the logged-in user's ID
-  useEffect(() => {
-    if (user && user.id) {
-      const userOrders = orders.filter((order) => order.buyer_id === user.id);
-      setFilteredOrders(userOrders);
+  // Fetch orders directly from the buyer endpoint
+  const fetchBuyerOrders = async () => {
+    if (!user || !user.id) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/orders/buyer/${user.id}`);
+      if (response.ok) {
+        const buyerOrders = await response.json();
+        setFilteredOrders(buyerOrders);
+      } else {
+        setError("無法載入訂單資料");
+      }
+    } catch (error) {
+      console.error('Error fetching buyer orders:', error);
+      setError("載入訂單時發生錯誤");
+    } finally {
+      setLoading(false);
     }
-  }, [orders, user]);
+  };
+
+  // Fetch orders when component opens
+  useEffect(() => {
+    if (isOpen && user && user.id) {
+      fetchBuyerOrders();
+    }
+  }, [isOpen, user]);
 
   /**
    * Memoized function to filter orders based on status and date range
    */
   const finalFilteredOrders = useMemo(() => {
-    
-    const now = new Date();
-
     return filteredOrders.filter((order) => {
-
-      const matchesStatus = order.order_status === orderStatus;
-
-      
-      // Filter orders based on status and date range
-      if (orderStatus === "未接單") {
-        return matchesStatus;
-      } else if (orderStatus === "接單" || orderStatus === "已完成") {
-        return matchesStatus;
+      // Status filter
+      if (orderStatus !== "all" && order.order_status !== orderStatus) {
+        return false;
       }
 
-      return false;
-     
+      // Date range filter (if implemented later)
+      // Add date filtering logic here if needed
+
+      return true;
     });
   }, [filteredOrders, orderStatus]);
 
@@ -76,24 +89,54 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orde
           {/* Filtering controls */}
           <>
             {/* Order status buttons */}
-            <div className="w-full flex justify-center space-x-2 mt-4">
+            <div className="w-full flex flex-wrap justify-center gap-2 mt-4">
+              <Button
+                variant={orderStatus === "all" ? "default" : "outline"}
+                onClick={() => setOrderStatus("all")}
+                className="text-sm"
+              >
+                全部訂單
+              </Button>
               <Button
                 variant={orderStatus === "未接單" ? "default" : "outline"}
                 onClick={() => setOrderStatus("未接單")}
+                className="text-sm"
               >
-                未接單
+                ⏳ 未接單
               </Button>
               <Button
                 variant={orderStatus === "接單" ? "default" : "outline"}
                 onClick={() => setOrderStatus("接單")}
+                className="text-sm"
               >
-                接單
+                🚚 已接單
+              </Button>
+              <Button
+                variant={orderStatus === "配送中" ? "default" : "outline"}
+                onClick={() => setOrderStatus("配送中")}
+                className="text-sm"
+              >
+                🛣️ 配送中
               </Button>
               <Button
                 variant={orderStatus === "已完成" ? "default" : "outline"}
                 onClick={() => setOrderStatus("已完成")}
+                className="text-sm"
               >
-                已完成
+                ✅ 已完成
+              </Button>
+            </div>
+
+            {/* Refresh button */}
+            <div className="w-full flex justify-center mt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={fetchBuyerOrders}
+                disabled={loading}
+                className="text-sm"
+              >
+                {loading ? '🔄 載入中...' : '↻ 重新整理'}
               </Button>
             </div>
 
@@ -105,21 +148,42 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orde
             )}
           </>
 
-          {/* Render order cards or display a message if no orders match */}
-          {filteredOrders.length > 0 ? (
-            finalFilteredOrders.length > 0 ? (
-              finalFilteredOrders.map((order) => (
-                <BuyerOrderCard key={order.id} order={order} />
-              ))
-            ) : (
-              <p className="mt-4 text-center">沒有符合條件的訂單</p>
-            )
-          ) : (
-            <p className="mt-4 text-center"> 沒有相關的訂單</p>
+          {/* Display error message */}
+          {error && (
+            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-600 text-center">{error}</p>
+            </div>
           )}
 
-          {/* Display error message if needed */}
-          {error && <div className="text-red-600 mt-2 text-center">{error}</div>}
+          {/* Loading state */}
+          {loading && (
+            <div className="mt-4 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="text-gray-600 mt-2">載入訂單中...</p>
+            </div>
+          )}
+
+          {/* Render order cards or display a message if no orders match */}
+          {!loading && !error && (
+            filteredOrders.length > 0 ? (
+              finalFilteredOrders.length > 0 ? (
+                <div className="space-y-4 mt-4">
+                  {finalFilteredOrders.map((order) => (
+                    <BuyerOrderCard key={`${order.service}-${order.id}`} order={order} />
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                  <p className="text-center text-gray-600">沒有符合條件的訂單</p>
+                </div>
+              )
+            ) : (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-center text-blue-600">您還沒有任何訂單</p>
+                <p className="text-center text-sm text-blue-500 mt-1">開始購物來建立您的第一筆訂單吧！</p>
+              </div>
+            )
+          )}
         </div>
       </SheetContent>
     </Sheet>

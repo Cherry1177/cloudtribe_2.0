@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,11 @@ const OrderCard: React.FC<{
 
     // State for managing the visibility of the transfer form
     const [showTransferForm, setShowTransferForm] = useState(false);
+    const [timeRemaining, setTimeRemaining] = useState<string>('');
+    const [showExpiryActions, setShowExpiryActions] = useState(false);
+    const [selectedExpiryAction, setSelectedExpiryAction] = useState<string>('');
+    const [expiryReason, setExpiryReason] = useState<string>('');
+    const [showPickupConfirmation, setShowPickupConfirmation] = useState<boolean>(false);
     // State for the new driver's phone number input
     const [newDriverPhone, setNewDriverPhone] = useState("");
     // State for error messages related to transfer operations
@@ -38,6 +43,119 @@ const OrderCard: React.FC<{
     const [acceptError, setAcceptError] = useState("");
     //state for drop agricultural product(if product is not put in the place that driver takes items)
     const [dropOrderMessage, setDropOrderMessage] = useState("");
+
+    // Calculate time remaining until order expires
+    useEffect(() => {
+        const calculateTimeRemaining = () => {
+            if (!order.timestamp || order.order_status !== '未接單') {
+                setTimeRemaining('');
+                return;
+            }
+
+            const now = new Date();
+            const orderTime = new Date(order.timestamp);
+            const expiryTime = new Date(orderTime.getTime() + (2 * 60 * 60 * 1000)); // 2 hours later
+            const timeDiff = expiryTime.getTime() - now.getTime();
+
+            if (timeDiff <= 0) {
+                setTimeRemaining('已過期');
+                return;
+            }
+
+            const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+            const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+
+            if (hours > 0) {
+                setTimeRemaining(`${hours}小時${minutes}分鐘後過期`);
+            } else {
+                setTimeRemaining(`${minutes}分鐘後過期`);
+            }
+        };
+
+        calculateTimeRemaining();
+        const interval = setInterval(calculateTimeRemaining, 60000); // Update every minute
+
+        return () => clearInterval(interval);
+    }, [order.timestamp, order.order_status]);
+
+    /**
+     * Handle expired product actions
+     */
+    const handleExpiryAction = async () => {
+        if (!selectedExpiryAction) {
+            alert('請選擇處理方式');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/orders/handle-expired/${order.id}?action=${selectedExpiryAction}&reason=${encodeURIComponent(expiryReason)}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to handle expired order');
+            }
+
+            const result = await response.json();
+            alert(`處理成功: ${result.message}`);
+            setShowExpiryActions(false);
+            
+            // Refresh the page or update the order status
+            window.location.reload();
+            
+        } catch (error) {
+            console.error('Error handling expired order:', error);
+            alert('處理失敗，請稍後再試');
+        }
+    };
+
+    /**
+     * Handle pickup confirmation
+     */
+    const handlePickupConfirmation = async () => {
+        try {
+            const response = await fetch(`/api/orders/${order.service}/${order.id}/pickup`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to confirm pickup');
+            }
+
+            alert('已確認取貨！開始配送');
+            setShowPickupConfirmation(false);
+            // Refresh the page to update order status
+            window.location.reload();
+            
+        } catch (error) {
+            console.error('Error confirming pickup:', error);
+            alert('確認取貨失敗，請稍後再試');
+        }
+    };
+
+    /**
+     * Handle navigation to delivery location
+     */
+    const handleStartNavigation = () => {
+        if (order.id && driverId) {
+            // Create a comprehensive navigation URL with all necessary parameters
+            const navUrl = `/navigation?orderId=${order.id}&driverId=${driverId}&destination=${encodeURIComponent(order.location)}`;
+            
+            // Open navigation in a new tab/window
+            window.open(navUrl, '_blank');
+            
+            // Log navigation start for tracking
+            console.log(`Starting navigation for order ${order.id} to ${order.location}`);
+        } else {
+            alert('導航資訊不完整，請稍後再試');
+        }
+    };
 
     /**
      * Handles the acceptance of an order.
@@ -174,6 +292,15 @@ const OrderCard: React.FC<{
                     <div>
                         <CardTitle className="text-lg font-bold">{order.order_type}</CardTitle>
                         <CardDescription className="text-lg text-white font-semibold">消費者姓名: {order.buyer_name}</CardDescription>
+                        {timeRemaining && order.order_status === '未接單' && (
+                            <div className={`text-sm mt-1 font-medium ${
+                                timeRemaining.includes('已過期') ? 'text-red-300' :
+                                timeRemaining.includes('分鐘') && !timeRemaining.includes('小時') ? 'text-yellow-300' :
+                                'text-green-300'
+                            }`}>
+                                ⏰ {timeRemaining}
+                            </div>
+                        )}
                     </div>
                 </div>
                 {order.order_status === '接單' && showCompleteButton && (
@@ -276,6 +403,121 @@ const OrderCard: React.FC<{
                 {dropOrderMessage && (
                     <p className="text-red-600 mt-2">{dropOrderMessage}</p>
                 )}
+
+                {/* Expiry handling form */}
+                {showExpiryActions && (
+                    <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <h4 className="font-bold text-gray-800 mb-3">🕒 產品過期處理</h4>
+                        <p className="text-sm text-gray-600 mb-3">請選擇如何處理已過期的產品：</p>
+                        
+                        <div className="space-y-2 mb-3">
+                            <label className="flex items-center">
+                                <input
+                                    type="radio"
+                                    name="expiryAction"
+                                    value="return_to_seller"
+                                    onChange={(e) => setSelectedExpiryAction(e.target.value)}
+                                    className="mr-2"
+                                />
+                                <span className="text-sm">🔄 退回賣家（賣家負責處理）</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input
+                                    type="radio"
+                                    name="expiryAction"
+                                    value="dispose"
+                                    onChange={(e) => setSelectedExpiryAction(e.target.value)}
+                                    className="mr-2"
+                                />
+                                <span className="text-sm">🗑️ 丟棄處理（退款給客戶）</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input
+                                    type="radio"
+                                    name="expiryAction"
+                                    value="donate"
+                                    onChange={(e) => setSelectedExpiryAction(e.target.value)}
+                                    className="mr-2"
+                                />
+                                <span className="text-sm">❤️ 捐贈給需要的人（退款給客戶）</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input
+                                    type="radio"
+                                    name="expiryAction"
+                                    value="customer_still_wants"
+                                    onChange={(e) => setSelectedExpiryAction(e.target.value)}
+                                    className="mr-2"
+                                />
+                                <span className="text-sm">✅ 客戶仍要收貨（已聯繫確認）</span>
+                            </label>
+                        </div>
+
+                        <Input
+                            type="text"
+                            value={expiryReason}
+                            onChange={(e) => setExpiryReason(e.target.value)}
+                            placeholder="請說明處理原因或備註"
+                            className="mb-3"
+                        />
+
+                        <div className="flex space-x-2">
+                            <Button 
+                                className="bg-orange-500 text-white hover:bg-orange-600" 
+                                onClick={handleExpiryAction}
+                            >
+                                確認處理
+                            </Button>
+                            <Button 
+                                variant="outline" 
+                                onClick={() => setShowExpiryActions(false)}
+                            >
+                                取消
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Pickup confirmation dialog */}
+                {showPickupConfirmation && (
+                    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <h4 className="font-bold text-gray-800 mb-3">📦 確認取貨</h4>
+                        <p className="text-sm text-gray-600 mb-3">
+                            請確認您已到達取貨地點並收取所有商品：
+                        </p>
+                        
+                        <div className="mb-4">
+                            <div className="text-sm font-medium text-gray-700 mb-2">取貨清單：</div>
+                            <ul className="text-xs text-gray-600 space-y-1">
+                                {order.items?.map((item, index) => (
+                                    <li key={index} className="flex justify-between">
+                                        <span>• {item.item_name}</span>
+                                        <span>數量: {item.quantity}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className="text-sm text-gray-600 mb-4">
+                            <strong>取貨地點:</strong> {order.location}
+                        </div>
+
+                        <div className="flex space-x-2">
+                            <Button 
+                                className="bg-green-600 text-white hover:bg-green-700" 
+                                onClick={handlePickupConfirmation}
+                            >
+                                ✅ 已取貨，開始配送
+                            </Button>
+                            <Button 
+                                variant="outline" 
+                                onClick={() => setShowPickupConfirmation(false)}
+                            >
+                                取消
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </CardContent>
             {/* Card footer showing order status and total price */}
             <CardFooter className="bg-gray-100 p-4 rounded-b-md flex justify-between items-center">
@@ -285,16 +527,79 @@ const OrderCard: React.FC<{
                 </div>
                 {/* Action buttons for accepting, transferring, or navigating to the order */}
                 {order.order_status !== '已完成' && (
-                    <div className="flex space-x-2">
-                        {order.order_status === '未接單' ? (
-                            <Button className="bg-black text-white" onClick={handleAccept}>接單</Button>
-                        ) : (
-                            <>
-                                <Button className="bg-red-500 text-white" onClick={() => setShowTransferForm(true)}>轉單</Button>
-                                {order.service == 'agricultural_product' &&
-                                    <Button className="bg-black text-white" onClick={handleDropOrder}>棄單</Button>}
-                            </>
-                            
+                    <div className="flex flex-col space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                            {order.order_status === '未接單' ? (
+                                <Button className="bg-black text-white" onClick={handleAccept}>接單</Button>
+                            ) : order.order_status === '配送逾時' ? (
+                                <Button 
+                                    className="bg-orange-500 text-white" 
+                                    onClick={() => setShowExpiryActions(true)}
+                                >
+                                    🕒 處理過期產品
+                                </Button>
+                            ) : order.order_status === '接單' ? (
+                                // Workflow for accepted orders
+                                <>
+                                    <Button 
+                                        className="bg-green-600 text-white hover:bg-green-700" 
+                                        onClick={() => setShowPickupConfirmation(true)}
+                                    >
+                                        📦 確認取貨
+                                    </Button>
+                                    <Button 
+                                        className="bg-blue-600 text-white hover:bg-blue-700" 
+                                        onClick={handleStartNavigation}
+                                    >
+                                        🧭 開始導航
+                                    </Button>
+                                    <Button 
+                                        className="bg-red-500 text-white hover:bg-red-600" 
+                                        onClick={() => setShowTransferForm(true)}
+                                    >
+                                        🔄 轉單
+                                    </Button>
+                                </>
+                            ) : order.order_status === '配送中' ? (
+                                // Workflow for orders being delivered
+                                <>
+                                    <Button 
+                                        className="bg-blue-600 text-white hover:bg-blue-700" 
+                                        onClick={handleStartNavigation}
+                                    >
+                                        🧭 繼續導航
+                                    </Button>
+                                    <Button 
+                                        className="bg-green-600 text-white hover:bg-green-700" 
+                                        onClick={() => {
+                                            const confirmed = window.confirm("確認已送達客戶手中？");
+                                            if (confirmed && order.id) {
+                                                onComplete(order.id.toString(), order.service);
+                                            }
+                                        }}
+                                    >
+                                        ✅ 確認送達
+                                    </Button>
+                                </>
+                            ) : (
+                                // Default actions for other statuses
+                                <>
+                                    <Button className="bg-red-500 text-white" onClick={() => setShowTransferForm(true)}>轉單</Button>
+                                    {order.service == 'agricultural_product' &&
+                                        <Button className="bg-black text-white" onClick={handleDropOrder}>棄單</Button>}
+                                </>
+                            )}
+                        </div>
+                        
+                        {/* Show expiry warning for accepted orders approaching expiry */}
+                        {order.order_status === '接單' && timeRemaining && timeRemaining.includes('分鐘') && !timeRemaining.includes('小時') && (
+                            <Button 
+                                variant="outline"
+                                className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                                onClick={() => setShowExpiryActions(true)}
+                            >
+                                ⚠️ 即將過期 - 預先處理
+                            </Button>
                         )}
                     </div>
                 )}

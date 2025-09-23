@@ -87,7 +87,12 @@ const DriverForm: React.FC<{ onClose: () => void, onUpdateSuccess: (data: Driver
             }, 1000);
         } catch (error) {
             console.error('Error submitting driver data:', error);
-            setError('提交司機資料時出錯，不可以註冊重複的電話號碼');
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (errorMessage.includes('電話號碼已存在')) {
+                setError('提交司機資料時出錯，不可以註冊重複的電話號碼');
+            } else {
+                setError('提交司機資料時出錯，請稍後再試');
+            }
         }
     };
 

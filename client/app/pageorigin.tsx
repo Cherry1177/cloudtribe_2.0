@@ -8,7 +8,7 @@ import TribeBuyerTutorial from '@/components/tutorials/TribeBuyerTutorial';
 import DriverTutorial from '@/components/tutorials/DriverTutorial';
 import TribeSellerTutorial from '@/components/tutorials/TribeSellerTutorial';
 import ConsumerTutorial from '@/components/tutorials/ConsumerTutorial';
-import { NavigationBar } from "@/components/NavigationBar";
+import { UnifiedNavigation } from "@/components/UnifiedNavigation";
 import Modal from '@/components/Modal'; // 引入自訂 Modal
 
 // Define the main section types
@@ -100,7 +100,7 @@ export default function Page() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between bg-slate-100">
-      <NavigationBar />
+      <UnifiedNavigation title="CloudTribe" />
       <div className="w-full h-full lg:p-8 p-2">
         {/* Header Section */}
         <div className="mb-20 lg:h-96 h-52 relative w-full overflow-hidden bg-green-600 flex flex-col items-center justify-center rounded-xl shadow-2xl transition hover:bg-green-400">

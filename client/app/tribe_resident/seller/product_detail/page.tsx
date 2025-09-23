@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useEffect } from "react"
-import { NavigationBar } from "@/components/NavigationBar";
+import { UnifiedNavigation } from "@/components/UnifiedNavigation";
 import { ProductDetailTable } from "@/components/tribe_resident/seller/ProductDetailTable";
 import SellerService from '@/services/seller/seller'
 import { ProductInfo } from '@/interfaces/tribe_resident/seller/seller';
@@ -80,7 +80,7 @@ export default function Page(){
   }
   return(
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
-      <NavigationBar/>
+      <UnifiedNavigation title="商品詳情" showBackButton={true} backHref="/tribe_resident/seller" />
       
       {/* Header Section */}
       <section className="py-8 bg-gradient-to-r from-[#003049] via-[#1d3557] to-[#457b9d]">

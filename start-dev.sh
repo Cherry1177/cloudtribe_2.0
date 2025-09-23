@@ -15,7 +15,7 @@ trap cleanup SIGINT SIGTERM
 
 # Start backend in background
 echo "📡 Starting FastAPI backend on port 8000..."
-cd /Users/cherry/cloud_tribe/cloudtribe
+cd /Users/cherry/Desktop/cloudtribe-2.0
 source venv/bin/activate
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload &
 BACKEND_PID=$!
@@ -25,7 +25,7 @@ sleep 3
 
 # Start frontend in background
 echo "🎨 Starting Next.js frontend on port 3000..."
-cd client
+cd /Users/cherry/Desktop/cloudtribe-2.0/client
 npm run dev &
 FRONTEND_PID=$!
 

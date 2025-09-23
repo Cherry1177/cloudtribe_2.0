@@ -150,8 +150,11 @@ const MapComponentContent: React.FC = () => {
 
   const searchParams = useSearchParams();
   const driverIdParam = searchParams?.get("driverId");
+  const orderIdParam = searchParams?.get("orderId");
+  const destinationParam = searchParams?.get("destination");
   const finalDestinationParam = searchParams?.get("finalDestination");
-  const waypointsParam = searchParams?.get("waypoints")
+  const waypointsParam = searchParams?.get("waypoints");
+  const trackDriverParam = searchParams?.get("trackDriver") === 'true';
 
   // Define state
   const [origin, setOrigin] = useState<LatLng | null>(null);
@@ -163,6 +166,8 @@ const MapComponentContent: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [navigationUrl, setNavigationUrl] = useState<string | null>(null);
   const [orderData, setOrderData] = useState<Order | null>(null);
+  const [driverInfo, setDriverInfo] = useState<any>(null);
+  const [isTrackingMode, setIsTrackingMode] = useState(trackDriverParam);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [showDriverOrders, setShowDriverOrders] = useState(false);
   const [driverData, setDriverData] = useState<Driver | null>(null);
@@ -376,6 +381,105 @@ const MapComponentContent: React.FC = () => {
       fetchDriverData(driverIdParam);
     }
   }, [driverIdParam]);
+
+  // Fetch specific order data when orderId is provided
+  useEffect(() => {
+    const fetchOrderData = async () => {
+      if (orderIdParam) {
+        try {
+          const response = await fetch(`/api/orders/${orderIdParam}`);
+          if (response.ok) {
+            const order: Order = await response.json();
+            setOrderData(order);
+            console.log('Loaded order data for navigation:', order);
+          } else {
+            console.error('Failed to fetch order data');
+          }
+        } catch (error) {
+          console.error('Error fetching order data:', error);
+        }
+      }
+    };
+
+    const fetchDriverInfo = async () => {
+      if (orderIdParam && isTrackingMode) {
+        try {
+          const response = await fetch(`/api/orders/${orderIdParam}/driver-info`);
+          if (response.ok) {
+            const driverData = await response.json();
+            setDriverInfo(driverData);
+            console.log('Loaded driver info for tracking:', driverData);
+          } else {
+            console.error('Failed to fetch driver info');
+          }
+        } catch (error) {
+          console.error('Error fetching driver info:', error);
+        }
+      }
+    };
+
+    fetchOrderData();
+    fetchDriverInfo();
+  }, [orderIdParam, isTrackingMode]);
+
+  // Set destination from URL parameter or order data
+  useEffect(() => {
+    const setDestinationFromParams = () => {
+      const destinationAddress = destinationParam || orderData?.location;
+      
+      if (destinationAddress && isLoaded && window.google && window.google.maps && window.google.maps.Geocoder) {
+        console.log('Setting up destination:', destinationAddress);
+        
+        try {
+          const geocoder = new window.google.maps.Geocoder();
+          geocoder.geocode({ 
+            address: destinationAddress,
+            componentRestrictions: { country: 'TW' }
+          }, (results, status) => {
+            if (status === 'OK' && results && results[0]) {
+              const location = results[0].geometry.location;
+              const destination = {
+                name: destinationAddress,
+                location: { lat: location.lat(), lng: location.lng() }
+              };
+              setDestinations([destination]);
+              console.log('✅ Auto-set destination for navigation:', destination);
+              
+              // Show success message to driver
+              if (orderData) {
+                console.log(`🧭 Navigation ready for Order #${orderData.id} to ${destinationAddress}`);
+              }
+            } else {
+              console.error('❌ Failed to geocode destination:', destinationAddress, status);
+              // Fallback: still set the destination with address for manual search
+              setDestinations([{ name: destinationAddress, location: { lat: 25.0330, lng: 121.5654 } }]);
+            }
+          });
+        } catch (error) {
+          console.error('❌ Geocoder error:', error);
+          // Fallback: set Taipei coordinates as default
+          setDestinations([{ name: destinationAddress, location: { lat: 25.0330, lng: 121.5654 } }]);
+        }
+      } else if (destinationAddress) {
+        // If Google Maps isn't ready yet, set a fallback destination
+        console.log('Google Maps not ready yet, setting fallback destination');
+        setDestinations([{ name: destinationAddress, location: { lat: 25.0330, lng: 121.5654 } }]);
+      }
+    };
+
+    // Only try to set destination when Google Maps is fully loaded
+    if (isLoaded) {
+      setDestinationFromParams();
+    } else {
+      // Retry when Google Maps finishes loading
+      const timer = setTimeout(() => {
+        if (isLoaded) {
+          setDestinationFromParams();
+        }
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [destinationParam, orderData, isLoaded]);
 
   useEffect(() => {
     if (driverData?.id) {
@@ -903,6 +1007,116 @@ return (
           上一頁
         </Button>
       </div>
+
+      {/* Order Information Card - Show when navigating for a specific order */}
+      {(orderData || orderIdParam) && (
+        <div className="mb-4 mx-4">
+          <Card className={`bg-gradient-to-r border-blue-200 ${isTrackingMode ? 'from-green-50 to-blue-50' : 'from-blue-50 to-green-50'}`}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center space-x-2">
+                <span className="text-2xl">{isTrackingMode ? '📍' : '🧭'}</span>
+                <span>{isTrackingMode ? '追蹤訂單' : '導航訂單'} #{orderData?.id || orderIdParam}</span>
+                {orderData?.is_urgent && (
+                  <span className="bg-red-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                    急件
+                  </span>
+                )}
+                {isTrackingMode && (
+                  <span className="bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold animate-pulse">
+                    🚚 追蹤中
+                  </span>
+                )}
+                {!orderData && orderIdParam && (
+                  <span className="bg-blue-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                    載入中...
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {orderData ? (
+                <>
+                  {/* Driver Information Section - Only show in tracking mode */}
+                  {isTrackingMode && driverInfo && (
+                    <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <h4 className="font-bold text-green-800 mb-2 flex items-center">
+                        <span className="mr-2">🚚</span>
+                        司機資訊
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <p className="font-semibold text-gray-700">👤 司機姓名:</p>
+                          <p className="text-green-700 font-medium">{driverInfo.driver_name}</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-700">📞 聯絡電話:</p>
+                          <p className="text-green-700">{driverInfo.driver_phone}</p>
+                        </div>
+                        {driverInfo.driver_location && (
+                          <div className="md:col-span-2">
+                            <p className="font-semibold text-gray-700">📍 司機位置:</p>
+                            <p className="text-green-700">{driverInfo.driver_location}</p>
+                          </div>
+                        )}
+                        <div className="md:col-span-2">
+                          <p className="font-semibold text-gray-700">⏰ 接單時間:</p>
+                          <p className="text-green-700">{new Date(driverInfo.accepted_at).toLocaleString('zh-TW')}</p>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center text-green-600">
+                        <span className="animate-pulse mr-1">🚚</span>
+                        <span className="font-medium">司機正在配送中...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Order Information */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="font-semibold text-gray-700">📍 送達地點:</p>
+                      <p className="text-blue-600 font-medium">{orderData.location}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-700">{isTrackingMode ? '🏠 收件人' : '👤 客戶'}:</p>
+                      <p>{orderData.buyer_name} ({orderData.buyer_phone})</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-700">💰 訂單金額:</p>
+                      <p className="text-green-600 font-bold">${orderData.total_price}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-700">📦 商品數量:</p>
+                      <p>{orderData.items?.length || 0} 項商品</p>
+                    </div>
+                    {isTrackingMode && (
+                      <div className="md:col-span-2">
+                        <p className="font-semibold text-gray-700">📋 訂單狀態:</p>
+                        <p className="text-blue-600 font-medium">{orderData.order_status || '配送中'}</p>
+                      </div>
+                    )}
+                  </div>
+                  {orderData.note && (
+                    <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                      <p className="font-semibold text-gray-700">📝 備註:</p>
+                      <p className="text-sm">{orderData.note}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    {isTrackingMode ? '正在載入追蹤資訊...' : '正在載入訂單資訊...'}
+                  </p>
+                  {destinationParam && (
+                    <p className="text-xs text-blue-600 mt-1">目的地: {destinationParam}</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* To remind client to click google navigation link  */}
       {showLinkTip && (
