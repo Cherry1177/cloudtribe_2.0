@@ -468,7 +468,8 @@ async def get_orders_by_seller(seller_id: int, conn: Connection = Depends(get_db
         # Fetch agricultural product orders for this seller
         cur.execute("""
             SELECT apo.id, apo.buyer_name, apo.buyer_phone, apo.status, apo.timestamp, 
-                   apo.starting_point, apo.end_point, apo.quantity, p.name as product_name, p.price
+                   apo.starting_point, apo.end_point, apo.quantity, p.name as product_name, p.price,
+                   p.img_link, p.category
             FROM agricultural_product_order apo
             LEFT JOIN agricultural_produce p ON apo.produce_id = p.id
             WHERE apo.seller_id = %s
@@ -488,7 +489,9 @@ async def get_orders_by_seller(seller_id: int, conn: Connection = Depends(get_db
                 "order_date": agri_order[4].isoformat() if agri_order[4] else "",  # timestamp
                 "delivery_date": agri_order[4].isoformat() if agri_order[4] else "",  # Same as order date
                 "location": agri_order[6],  # end_point
-                "order_type": "agricultural_product"
+                "order_type": "agricultural_product",
+                "img_link": agri_order[10],  # product image
+                "category": agri_order[11]   # product category
             }
             order_list.append(order_dict)
 

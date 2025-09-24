@@ -81,7 +81,7 @@ const BuyerPage: React.FC = () => {
    */
   const fetchOrders = useCallback(async () => {
     try {
-      const response = await fetch("/api/orders");
+      const response = await fetch("/api/orders/");
       if (!response.ok) {
         throw new Error("Failed to fetch orders");
       }

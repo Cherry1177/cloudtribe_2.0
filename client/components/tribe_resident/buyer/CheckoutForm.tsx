@@ -203,7 +203,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
     };
 
     try {
-      const response = await fetch('/api/orders', {
+      // Use environment variable for backend URL
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/orders/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

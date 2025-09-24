@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Package, Clock, CheckCircle, Truck, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 interface Order {
   id: number;
@@ -22,12 +23,29 @@ interface Order {
   delivery_date: string;
   location: string;
   order_type?: string; // Add order type
+  img_link?: string; // Product image
+  category?: string; // Product category
 }
 
 export default function OrderManagementPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Function to get the correct image source
+  const getImageSrc = (order: Order) => {
+    if (order.category === "小木屋鬆餅" || order.category === "金鰭" || order.category === "原丼力") {
+      return `/test/${encodeURIComponent(order.img_link || 'default.png')}`; // Local image
+    } else if (order.img_link?.includes('ibb.co') || order.img_link?.includes('imgur.com')) {
+      return order.img_link; // Imgur/ibb image - direct URL
+    } else if (order.img_link && order.img_link.startsWith('http')) {
+      return order.img_link; // Already a full URL
+    } else if (order.img_link) {
+      return `https://www.cloudtribe.site${order.img_link}`; // CloudTribe image
+    } else {
+      return '/fruit1.jpg'; // Default fallback image
+    }
+  };
 
   // Mock data for demonstration
   useEffect(() => {
@@ -47,8 +65,14 @@ export default function OrderManagementPage() {
         const data = await response.json();
         console.log('Received orders from API:', data.map((o: any) => ({ id: o.id, status: o.status, order_type: o.order_type })));
         
+        // Filter only agricultural products (farm products) - exclude nearby store products
+        const agriculturalOrders = data.filter((order: any) => 
+          order.order_type === 'agricultural_product'
+        );
+        console.log('Filtered agricultural orders:', agriculturalOrders.length, 'out of', data.length, 'total orders');
+        
         // Transform the API data to match the frontend interface
-        const transformedOrders: Order[] = data.map((order: any) => ({
+        const transformedOrders: Order[] = agriculturalOrders.map((order: any) => ({
           id: typeof order.id === 'string' ? parseInt(order.id.replace('agri_', '')) : order.id,
           original_id: order.id, // Store the original ID
           customer_name: order.customer_name,
@@ -60,7 +84,9 @@ export default function OrderManagementPage() {
           order_date: order.order_date,
           delivery_date: order.delivery_date,
           location: order.location,
-          order_type: order.order_type
+          order_type: order.order_type,
+          img_link: order.img_link,
+          category: order.category
         }));
         setOrders(transformedOrders);
       } catch (err) {
@@ -282,14 +308,34 @@ export default function OrderManagementPage() {
                     return (
                       <Card key={order.id} className="hover:shadow-lg transition-shadow">
                         <CardContent className="p-6">
-                          <div className="flex items-start justify-between">
+                          <div className="flex items-start space-x-4">
+                            {/* Product Image */}
+                            <div className="flex-shrink-0">
+                              <div className="w-20 h-20 rounded-lg overflow-hidden bg-gray-100">
+                                <Image
+                                  src={getImageSrc(order)}
+                                  alt={order.product_name || '農產品'}
+                                  width={80}
+                                  height={80}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.src = '/fruit1.jpg'; // Fallback image
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            
+                            {/* Order Details */}
                             <div className="flex-1">
-                              <div className="flex items-center space-x-3 mb-4">
-                                <Badge className={statusInfo.color}>
-                                  <StatusIcon className="w-3 h-3 mr-1" />
-                                  {statusInfo.label}
-                                </Badge>
-                                <span className="text-sm text-gray-500">訂單 #{order.id}</span>
+                              <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center space-x-3">
+                                  <Badge className={statusInfo.color}>
+                                    <StatusIcon className="w-3 h-3 mr-1" />
+                                    {statusInfo.label}
+                                  </Badge>
+                                  <span className="text-sm text-gray-500">訂單 #{order.id}</span>
+                                </div>
                               </div>
                               
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

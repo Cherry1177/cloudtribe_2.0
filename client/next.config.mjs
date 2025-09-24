@@ -20,6 +20,12 @@ export default async (phase) => {
   return {
     reactStrictMode: true,
     trailingSlash: false,
+    // Allow ngrok domains for development
+    allowedDevOrigins: isDev ? [
+      "d4f8d4a18d91.ngrok-free.app",
+      "*.ngrok-free.app",
+      "*.ngrok.io"
+    ] : undefined,
     // Setting environment variables
     env: {
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:
@@ -41,8 +47,26 @@ export default async (phase) => {
           port: "",
           pathname: "/**",
         },
+        {
+          protocol: "https",
+          hostname: "i.ibb.co",
+          port: "",
+          pathname: "/**",
+        },
+        {
+          protocol: "https",
+          hostname: "imgur.com",
+          port: "",
+          pathname: "/**",
+        },
+        {
+          protocol: "https",
+          hostname: "i.imgur.com",
+          port: "",
+          pathname: "/**",
+        },
       ],
-      domains: ["www.cloudtribe.site", "cloudtribe.site"],
+      domains: ["www.cloudtribe.site", "cloudtribe.site", "i.ibb.co", "imgur.com", "i.imgur.com"],
     },
 
     // S

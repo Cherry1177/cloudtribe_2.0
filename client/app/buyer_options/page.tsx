@@ -176,6 +176,23 @@ export default function BuyerOptionsPage() {
               </div>
             </Card>
           </div>
+
+          {/* Pending Orders Section */}
+          <div className="mt-16 text-center">
+            <div className="max-w-2xl mx-auto">
+              <h3 className="text-2xl font-bold text-gray-900 mb-4">管理您的訂單</h3>
+              <p className="text-gray-600 mb-8">查看和管理您的待處理訂單狀態</p>
+              
+              <Link href="/consumer/purchased_item?tab=pending">
+                <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold py-4 px-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:scale-105 hover:-translate-y-1 text-lg">
+                  <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  ⏳ 待處理訂單
+                </Button>
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 

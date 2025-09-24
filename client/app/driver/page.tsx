@@ -104,7 +104,7 @@ const DriverPage: React.FC = () => {
     const handleFetchUnacceptedOrders = async () => {
         try {
             console.log('Fetching unaccepted orders...');
-            const response = await fetch(`/api/orders`);
+            const response = await fetch(`/api/orders/`);
             if (!response.ok) {
                 throw new Error('Failed to fetch unaccepted orders');
             }

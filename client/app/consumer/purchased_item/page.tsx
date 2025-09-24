@@ -11,7 +11,7 @@ import UserSrevice from '@/services/user/user'
 import { User } from '@/interfaces/user/user';
 import { PurchasedProduct } from '@/interfaces/consumer/consumer';
 import { Order } from '@/interfaces/tribe_resident/buyer/order';
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function Page(){
   const [user, setUser] = useState<User>()
@@ -20,11 +20,20 @@ export default function Page(){
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>("")
   const [viewMode, setViewMode] = useState<'enhanced' | 'legacy'>('enhanced')
+  const [defaultTab, setDefaultTab] = useState<string>('all')
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     const _user = UserSrevice.getLocalStorageUser();
     setUser(_user);
+    
+    // Check URL parameter for tab selection
+    const tab = searchParams.get('tab');
+    if (tab === 'pending') {
+      setDefaultTab('未接單'); // Set to pending orders tab
+    }
+    
     if (_user.name === 'empty') {
       router.replace('/login');
     } else {
@@ -32,7 +41,7 @@ export default function Page(){
       get_purchased_items(_user);
       fetchBuyerOrders(_user.id);
     }
-  }, [router]);
+  }, [router, searchParams]);
 
   const get_purchased_items = async(user: User) => {
     try {
@@ -136,7 +145,7 @@ export default function Page(){
 
             {/* Enhanced Order Tabs */}
             {!loading && !error && (
-              <Tabs defaultValue="all" className="w-full">
+              <Tabs defaultValue={defaultTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="all">全部 ({orders.length})</TabsTrigger>
                   <TabsTrigger value="未接單">⏳ 未接單 ({getOrdersByStatus('未接單').length})</TabsTrigger>

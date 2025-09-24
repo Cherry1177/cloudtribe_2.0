@@ -29,7 +29,7 @@ class Order(BaseModel):
     order_type: str = '購買類'
     order_status: str = '未接單'
     note: Optional[str] = None
-    service: str
+    service: str = 'necessities'
     items: List[OrderItem]
     timestamp: Optional[datetime] = None 
 
