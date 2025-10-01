@@ -7,6 +7,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { format } from "date-fns";
 import BuyerOrderCard from "@/components/tribe_resident/buyer/BuyerOrderCard";
+import HistoryManagement from "@/components/history/HistoryManagement";
 import { Order } from "@/interfaces/tribe_resident/buyer/order";
 import UserService from "@/services/user/user";
 
@@ -27,6 +28,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orde
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [error, setError] = useState<string>("");
+  const [showHistoryManagement, setShowHistoryManagement] = useState(false);
 
   // Fetch orders directly from the buyer endpoint
   const fetchBuyerOrders = async () => {
@@ -79,6 +81,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orde
   const totalPrice = finalFilteredOrders.reduce((total, order) => total + order.total_price, 0);
 
   return (
+    <>
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="w-full max-w-2xl h-full overflow-y-auto" aria-describedby="form-description">
         <SheetHeader>
@@ -124,6 +127,17 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orde
                 className="text-sm"
               >
                 ✅ 已完成
+              </Button>
+            </div>
+
+            {/* History Management Button */}
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowHistoryManagement(true)}
+                className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+              >
+                📊 交易記錄管理
               </Button>
             </div>
 
@@ -187,6 +201,29 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orde
         </div>
       </SheetContent>
     </Sheet>
+
+    {/* History Management Sheet */}
+    <Sheet open={showHistoryManagement} onOpenChange={setShowHistoryManagement}>
+      <SheetContent 
+        side="right"
+        className="w-full sm:max-w-4xl p-0 sm:p-6"
+      >
+        <SheetHeader className="p-6 sm:p-0">
+          <SheetTitle>交易記錄管理</SheetTitle>
+          <SheetClose />
+        </SheetHeader>
+        <div className="overflow-y-auto h-[calc(100vh-80px)] p-6 sm:p-0">
+          {user && (
+            <HistoryManagement 
+              userId={user.id} 
+              userType="buyer" 
+              userName={user.name}
+            />
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+    </>
   );
 };
 

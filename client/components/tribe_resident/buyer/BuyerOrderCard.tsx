@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Order } from '@/interfaces/tribe_resident/buyer/order';
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import Image from 'next/image';
+import { getImageSrc, getFallbackImage } from '@/lib/imageUtils';
 
 /**
  * A functional component that displays a comprehensive order card for buyers with real-time tracking.
@@ -18,16 +20,21 @@ const BuyerOrderCard: React.FC<{
   const [driverInfo, setDriverInfo] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [currentOrder, setCurrentOrder] = useState(order);
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   
-  // Function to determine the correct image source based on category and URL
-  const getImageSrc = (item: any) => {
-      if (item.category === "小木屋鬆餅" || item.category === "金鰭" || item.category === "原丼力") {
-        return `/test/${encodeURIComponent(item.img)}`; // Local image
-      } else if (item.img?.includes('imgur.com')) {
-        return item.img; // Imgur image - direct URL
-      } else {
-        return `https://www.cloudtribe.site${item.img}`; // CloudTribe image
-      }
+  // Get image source with error handling
+  const getItemImageSrc = (item: any) => {
+    const itemKey = `${item.item_id}_${item.img}`;
+    if (imageErrors.has(itemKey)) {
+      return getFallbackImage(item);
+    }
+    return getImageSrc(item);
+  };
+
+  // Handle image load errors
+  const handleImageError = (item: any) => {
+    const itemKey = `${item.item_id}_${item.img}`;
+    setImageErrors(prev => new Set([...prev, itemKey]));
   };
 
   // Get status color and icon
@@ -54,6 +61,7 @@ const BuyerOrderCard: React.FC<{
           text: '配送中',
           description: '司機已取貨，正在配送途中'
         };
+      case '已送達':
       case '已完成':
         return { 
           color: 'bg-green-500', 
@@ -88,7 +96,7 @@ const BuyerOrderCard: React.FC<{
   // Fetch driver information when order is accepted
   useEffect(() => {
     const fetchDriverInfo = async () => {
-      if (currentOrder.order_status === '接單' || currentOrder.order_status === '配送中') {
+      if (currentOrder.order_status === '接單' || currentOrder.order_status === '配送中' || currentOrder.order_status === '已送達') {
         try {
           // Get driver info from driver_orders table
           const response = await fetch(`/api/orders/${currentOrder.id}/driver-info`);
@@ -162,7 +170,7 @@ const BuyerOrderCard: React.FC<{
       </div>
 
       {/* Driver Information */}
-      {driverInfo && (currentOrder.order_status === '接單' || currentOrder.order_status === '配送中') && (
+      {driverInfo && (currentOrder.order_status === '接單' || currentOrder.order_status === '配送中' || currentOrder.order_status === '已送達') && (
         <div className="px-4 pb-2">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <div className="flex justify-between items-start mb-2">
@@ -200,6 +208,12 @@ const BuyerOrderCard: React.FC<{
                   <span className="font-medium">正在配送中...</span>
                 </div>
               )}
+              {currentOrder.order_status === '已送達' && (
+                <div className="mt-2 flex items-center text-green-600">
+                  <span className="mr-1">✅</span>
+                  <span className="font-medium">已成功送達！</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -225,13 +239,17 @@ const BuyerOrderCard: React.FC<{
           <div className="space-y-2">
             {currentOrder.items.map((item: any) => (
               <div key={item.item_id} className="flex items-center space-x-3 bg-gray-50 p-2 rounded-lg">
-                <img
-                  src={getImageSrc(item)}
-                  alt={item.item_name || '未命名'}
-                  width={40}
-                  height={40}
-                  className="object-cover rounded"
-                />
+                <div className="relative w-10 h-10 flex-shrink-0">
+                  <Image
+                    src={getItemImageSrc(item)}
+                    alt={item.item_name || '未命名'}
+                    width={40}
+                    height={40}
+                    className="object-cover rounded"
+                    onError={() => handleImageError(item)}
+                    unoptimized={true}
+                  />
+                </div>
                 <div className="flex-1">
                   <p className="font-semibold text-sm text-gray-800 truncate">
                     {item.item_name || '未命名'}

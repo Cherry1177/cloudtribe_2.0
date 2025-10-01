@@ -28,7 +28,7 @@ export default function Page() {
             <div className="flex items-center space-x-4">
               <div className="relative">
                 <div className="absolute inset-0 bg-white bg-opacity-20 rounded-lg"></div>
-                <Image src={`/newlogo.png?v=${Date.now()}`} alt="CloudTribe" width={64} height={64} className="relative z-10 rounded-lg" />
+                <Image src={`/newlogo.png`} alt="CloudTribe" width={64} height={64} className="relative z-10 rounded-lg" />
               </div>
               <div>
                 <h1 className="text-2xl font-black tracking-wide bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">
@@ -142,7 +142,7 @@ export default function Page() {
           <div className="flex items-center space-x-4">
             <div className="relative">
               <div className="absolute inset-0 bg-white bg-opacity-20 rounded-lg"></div>
-                      <Image src={`/newlogo.png?v=${Date.now()}`} alt="CloudTribe" width={64} height={64} className="relative z-10 rounded-lg" />
+                      <Image src={`/newlogo.png`} alt="CloudTribe" width={64} height={64} className="relative z-10 rounded-lg" />
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-wide bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">
@@ -183,7 +183,7 @@ export default function Page() {
           <div className="flex items-center justify-center mb-4">
             <div className="relative">
               <div className="absolute inset-0 bg-white bg-opacity-20 rounded-lg"></div>
-                        <Image src={`/newlogo.png?v=${Date.now()}`} alt="CloudTribe" width={40} height={40} className="relative z-10 mr-2 rounded-lg" />
+                        <Image src={`/newlogo.png`} alt="CloudTribe" width={40} height={40} className="relative z-10 mr-2 rounded-lg" />
             </div>
             <h3 className="text-lg font-black bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">CloudTribe</h3>
           </div>

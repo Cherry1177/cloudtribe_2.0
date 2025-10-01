@@ -52,7 +52,7 @@ export const ModernNavigation: React.FC<ModernNavigationProps> = ({
           )}
           <div className="relative">
             <div className="absolute inset-0 bg-white bg-opacity-20 rounded-lg"></div>
-            <Image src={`/newlogo.png?v=${Date.now()}`} alt="CloudTribe" width={56} height={56} className="relative z-10 rounded-lg" />
+            <Image src={`/newlogo.png`} alt="CloudTribe" width={56} height={56} className="relative z-10 rounded-lg" />
           </div>
           <div>
             <h1 className="text-xl font-black tracking-wide bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">

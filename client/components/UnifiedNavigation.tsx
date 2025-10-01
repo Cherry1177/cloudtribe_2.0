@@ -96,7 +96,7 @@ export const UnifiedNavigation: React.FC<UnifiedNavigationProps> = ({
               <div className="relative">
                 <div className="absolute inset-0 bg-white bg-opacity-20 rounded-xl group-hover:bg-opacity-30 transition-all duration-200"></div>
                 <Image 
-                  src={`/newlogo.png?v=${Date.now()}`} 
+                  src={`/newlogo.png`} 
                   alt="CloudTribe" 
                   width={48} 
                   height={48} 
@@ -138,7 +138,7 @@ export const UnifiedNavigation: React.FC<UnifiedNavigationProps> = ({
                     className="flex items-center space-x-2 text-white hover:bg-white hover:bg-opacity-20 hover:text-white p-2 rounded-lg transition-all duration-200"
                   >
                     <FontAwesomeIcon icon={faUser} className="w-4 h-4" />
-                    <span className="hidden sm:inline font-medium">{user.name || user.email}</span>
+                    <span className="hidden sm:inline font-medium">{user.name}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">

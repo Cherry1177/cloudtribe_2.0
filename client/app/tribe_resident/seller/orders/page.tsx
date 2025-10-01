@@ -5,10 +5,13 @@ import { UnifiedNavigation } from '@/components/UnifiedNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { getImageSrc } from '@/lib/imageUtils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Package, Clock, CheckCircle, Truck, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import HistoryManagement from '@/components/history/HistoryManagement';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet";
 
 interface Order {
   id: number;
@@ -31,21 +34,9 @@ export default function OrderManagementPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showHistoryManagement, setShowHistoryManagement] = useState(false);
 
-  // Function to get the correct image source
-  const getImageSrc = (order: Order) => {
-    if (order.category === "小木屋鬆餅" || order.category === "金鰭" || order.category === "原丼力") {
-      return `/test/${encodeURIComponent(order.img_link || 'default.png')}`; // Local image
-    } else if (order.img_link?.includes('ibb.co') || order.img_link?.includes('imgur.com')) {
-      return order.img_link; // Imgur/ibb image - direct URL
-    } else if (order.img_link && order.img_link.startsWith('http')) {
-      return order.img_link; // Already a full URL
-    } else if (order.img_link) {
-      return `https://www.cloudtribe.site${order.img_link}`; // CloudTribe image
-    } else {
-      return '/fruit1.jpg'; // Default fallback image
-    }
-  };
+  // Use standardized image handling
 
   // Mock data for demonstration
   useEffect(() => {
@@ -215,13 +206,21 @@ export default function OrderManagementPage() {
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white">
         <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="flex items-center space-x-4 mb-6">
+          <div className="flex items-center justify-between mb-6">
             <Link href="/seller_options">
               <Button variant="ghost" size="sm" className="text-white hover:bg-white hover:bg-opacity-20">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 返回賣家選項
               </Button>
             </Link>
+            
+            <Button
+              variant="outline"
+              onClick={() => setShowHistoryManagement(true)}
+              className="bg-white bg-opacity-20 border-white text-white hover:bg-white hover:text-blue-600"
+            >
+              📊 交易記錄管理
+            </Button>
           </div>
           <h1 className="text-4xl font-bold mb-2">訂單管理中心</h1>
           <p className="text-blue-100 text-lg">管理您的訂單狀態，提供優質的客戶服務</p>
@@ -313,7 +312,7 @@ export default function OrderManagementPage() {
                             <div className="flex-shrink-0">
                               <div className="w-20 h-20 rounded-lg overflow-hidden bg-gray-100">
                                 <Image
-                                  src={getImageSrc(order)}
+                                  src={getImageSrc({img: order.img_link, category: order.category})}
                                   alt={order.product_name || '農產品'}
                                   width={80}
                                   height={80}
@@ -397,6 +396,26 @@ export default function OrderManagementPage() {
           ))}
         </Tabs>
       </div>
+
+      {/* History Management Sheet */}
+      <Sheet open={showHistoryManagement} onOpenChange={setShowHistoryManagement}>
+        <SheetContent 
+          side="right"
+          className="w-full sm:max-w-4xl p-0 sm:p-6"
+        >
+          <SheetHeader className="p-6 sm:p-0">
+            <SheetTitle>交易記錄管理</SheetTitle>
+            <SheetClose />
+          </SheetHeader>
+          <div className="overflow-y-auto h-[calc(100vh-80px)] p-6 sm:p-0">
+            <HistoryManagement 
+              userId={1} // TODO: Get actual seller ID from user context
+              userType="seller" 
+              userName="賣家" // TODO: Get actual seller name
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
     </main>
   );
 }

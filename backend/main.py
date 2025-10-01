@@ -9,7 +9,7 @@ import os
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from backend.routers import orders, drivers, users, seller, consumer
+from backend.routers import orders, drivers, users, seller, consumer, history_management
 from collections import defaultdict
 import re
 
@@ -64,11 +64,38 @@ app.include_router(drivers.router, prefix="/api/drivers", tags=["drivers"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(seller.router, prefix="/api/seller", tags=["seller"])
 app.include_router(consumer.router, prefix="/api/consumer", tags=["consumer"])
+app.include_router(history_management.router, prefix="/api/history", tags=["history"])
 
-# Setup CORS
+# Setup CORS - Allow access from network devices
+import socket
+
+def get_network_ip():
+    """Get the local network IP address"""
+    try:
+        # Connect to a remote address to determine local IP
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except:
+        return "localhost"
+
+network_ip = get_network_ip()
+allowed_origins = [
+    "*",  # Allow all origins for development
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    f"http://{network_ip}:3000",
+    "https://d4f8d4a18d91.ngrok-free.app",
+    "https://*.ngrok-free.app",
+    "https://*.ngrok.io"
+]
+
+print(f"🌐 Network IP: {network_ip}")
+print(f"🔒 Allowed CORS origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # you can change this to specific origin
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

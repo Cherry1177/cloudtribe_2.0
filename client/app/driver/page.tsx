@@ -6,6 +6,7 @@ import DriverForm from "@/components/driver/DriverForm";
 import OrderListWithPagination from "@/components/driver/OrderListWithPagination";
 import DriverOrdersPage from "@/components/driver/DriverOrdersPage";
 import DriverAvailableTimes from "@/components/driver/DriverAvailableTimes"; 
+import HistoryManagement from "@/components/history/HistoryManagement";
 import { UnifiedNavigation } from "@/components/UnifiedNavigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,7 @@ const DriverPage: React.FC = () => {
 
     // add state for showing unaccepted orders
     const [showUnacceptedOrders, setShowUnacceptedOrders] = useState(false);
+    const [showHistoryManagement, setShowHistoryManagement] = useState(false);
 
 
 
@@ -272,6 +274,37 @@ const DriverPage: React.FC = () => {
     };
 
     /**
+     * Handle pickup confirmation.
+     * @param orderId - The ID of the order to confirm pickup.
+     * @param service - The service type of the order.
+     */
+    const handlePickupOrder = async (orderId: string, service: string) => {
+        try {
+            const response = await fetch(`/api/orders/${service}/${orderId}/pickup`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to confirm pickup');
+            }
+
+            alert('已確認取貨！開始配送');
+            
+            // Refresh driver orders
+            if (driverData?.id) {
+                handleFetchDriverOrders(driverData.id);
+            }
+
+        } catch (error) {
+            console.error('Error confirming pickup:', error);
+            alert('確認取貨失敗');
+        }
+    };
+
+    /**
      * Handle applying to become a driver.
      */
     const handleApplyDriverClick = () => {
@@ -431,7 +464,7 @@ const DriverPage: React.FC = () => {
                                 </Card>
 
                                 {/* Action Buttons */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <Card className="hover:shadow-xl transition-all duration-300 border-2 border-blue-200 hover:border-blue-400 bg-white">
                                         <CardContent className="p-6 text-center">
                                             <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
@@ -472,6 +505,24 @@ const DriverPage: React.FC = () => {
                                             </Button>
                                         </CardContent>
                                     </Card>
+
+                                    <Card className="hover:shadow-xl transition-all duration-300 border-2 border-green-200 hover:border-green-400 bg-white">
+                                        <CardContent className="p-6 text-center">
+                                            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                                                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                                </svg>
+                                            </div>
+                                            <h3 className="text-xl font-bold text-gray-900 mb-2">交易記錄管理</h3>
+                                            <p className="text-gray-600 mb-4">匯出記錄與清理舊資料</p>
+                                            <Button 
+                                                className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+                                                onClick={() => setShowHistoryManagement(true)}
+                                            >
+                                                管理交易記錄
+                                            </Button>
+                                        </CardContent>
+                                    </Card>
                                 </div>
 
                                 {/* Unaccepted Orders List */}
@@ -506,7 +557,7 @@ const DriverPage: React.FC = () => {
                     <div className="flex items-center justify-center mb-4">
                         <div className="relative">
                             <div className="absolute inset-0 bg-white bg-opacity-20 rounded-lg"></div>
-                                    <Image src={`/newlogo.png?v=${Date.now()}`} alt="CloudTribe" width={40} height={40} className="relative z-10 mr-2 rounded-lg" />
+                                    <Image src={`/newlogo.png`} alt="CloudTribe" width={40} height={40} className="relative z-10 mr-2 rounded-lg" />
                         </div>
                         <h3 className="text-lg font-black bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">CloudTribe</h3>
                     </div>
@@ -552,8 +603,31 @@ const DriverPage: React.FC = () => {
                                 onTransfer={handleTransferOrder}
                                 onNavigate={(orderId: string) => handleNavigate(orderId, driverData?.id || 0)}
                                 onComplete={handleCompleteOrder}
+                                onPickup={handlePickupOrder}
                             />
                         }
+                    </div>
+                </SheetContent>
+            </Sheet>
+
+            {/* History Management Sheet */}
+            <Sheet open={showHistoryManagement} onOpenChange={setShowHistoryManagement}>
+                <SheetContent 
+                    side="right"
+                    className="w-full sm:max-w-4xl p-0 sm:p-6"
+                >
+                    <SheetHeader className="p-6 sm:p-0">
+                        <SheetTitle>交易記錄管理</SheetTitle>
+                        <SheetClose />
+                    </SheetHeader>
+                    <div className="overflow-y-auto h-[calc(100vh-80px)] p-6 sm:p-0">
+                        {user && (
+                            <HistoryManagement 
+                                userId={user.id} 
+                                userType="driver" 
+                                userName={user.name}
+                            />
+                        )}
                     </div>
                 </SheetContent>
             </Sheet>

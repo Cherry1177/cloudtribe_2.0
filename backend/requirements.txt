@@ -8,3 +8,6 @@ pydantic
 pydantic_core
 python-dotenv
 bcrypt
+pandas
+openpyxl
+schedule

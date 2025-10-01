@@ -2,11 +2,23 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet";
 import { UnifiedNavigation } from '@/components/UnifiedNavigation';
+import HistoryManagement from '@/components/history/HistoryManagement';
+import UserService from '@/services/user/user';
 
 export default function BuyerOptionsPage() {
+  const [showHistoryManagement, setShowHistoryManagement] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const userData = UserService.getLocalStorageUser();
+    setUser(userData);
+  }, []);
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
       <UnifiedNavigation title="買家專區" showBackButton={true} />
@@ -183,14 +195,26 @@ export default function BuyerOptionsPage() {
               <h3 className="text-2xl font-bold text-gray-900 mb-4">管理您的訂單</h3>
               <p className="text-gray-600 mb-8">查看和管理您的待處理訂單狀態</p>
               
-              <Link href="/consumer/purchased_item?tab=pending">
-                <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold py-4 px-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:scale-105 hover:-translate-y-1 text-lg">
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link href="/consumer/purchased_item?tab=pending">
+                  <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold py-4 px-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:scale-105 hover:-translate-y-1 text-lg">
+                    <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    ⏳ 待處理訂單
+                  </Button>
+                </Link>
+
+                <Button 
+                  onClick={() => setShowHistoryManagement(true)}
+                  className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-4 px-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:scale-105 hover:-translate-y-1 text-lg"
+                >
                   <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
-                  ⏳ 待處理訂單
+                  📊 交易記錄管理
                 </Button>
-              </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -202,7 +226,7 @@ export default function BuyerOptionsPage() {
           <div className="flex items-center justify-center mb-4">
             <div className="relative">
               <div className="absolute inset-0 bg-white bg-opacity-20 rounded-lg"></div>
-                        <Image src={`/newlogo.png?v=${Date.now()}`} alt="CloudTribe" width={40} height={40} className="relative z-10 mr-2 rounded-lg" />
+                        <Image src={`/newlogo.png`} alt="CloudTribe" width={40} height={40} className="relative z-10 mr-2 rounded-lg" />
             </div>
             <h3 className="text-lg font-black bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">CloudTribe</h3>
           </div>
@@ -214,6 +238,28 @@ export default function BuyerOptionsPage() {
           </p>
         </div>
       </footer>
+
+      {/* History Management Sheet */}
+      <Sheet open={showHistoryManagement} onOpenChange={setShowHistoryManagement}>
+        <SheetContent 
+          side="right"
+          className="w-full sm:max-w-4xl p-0 sm:p-6"
+        >
+          <SheetHeader className="p-6 sm:p-0">
+            <SheetTitle>交易記錄管理</SheetTitle>
+            <SheetClose />
+          </SheetHeader>
+          <div className="overflow-y-auto h-[calc(100vh-80px)] p-6 sm:p-0">
+            {user && (
+              <HistoryManagement 
+                userId={user.id} 
+                userType="buyer" 
+                userName={user.name}
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </main>
   );
 }

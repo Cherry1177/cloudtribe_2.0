@@ -111,7 +111,7 @@ export default function Page(){
               <div className="flex justify-center">
                 <div className="relative">
           <img
-            src={productInfo?.img_link || '/default-image.png'} 
+            src={productInfo?.img_link || '/fruit1.jpg'} 
             alt={productInfo?.name || 'Product Image'} 
                     className="w-full max-w-md h-80 object-cover rounded-xl shadow-lg"
                   />
@@ -134,7 +134,7 @@ export default function Page(){
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-600">商品價格</p>
-                        <p className="text-2xl font-bold text-gray-900">${productInfo?.price} / {productInfo?.unit}</p>
+                        <p className="text-2xl font-bold text-gray-900">${String(productInfo?.price || 0)} / {productInfo?.unit || ''}</p>
                       </div>
                     </div>
 
@@ -146,7 +146,7 @@ export default function Page(){
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-600">商品總數量</p>
-                        <p className="text-2xl font-bold text-gray-900">{productInfo?.total_quantity}</p>
+                        <p className="text-2xl font-bold text-gray-900">{String(productInfo?.total_quantity || 0)}</p>
                       </div>
                     </div>
 

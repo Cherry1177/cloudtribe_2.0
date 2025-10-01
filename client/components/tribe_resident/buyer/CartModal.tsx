@@ -8,6 +8,7 @@ import { faTrashAlt } from '@fortawesome/free-solid-svg-icons';
 import { CartModalProps } from '@/interfaces/tribe_resident/buyer/buyer';
 import CheckoutForm from "@/components/tribe_resident/buyer/CheckoutForm";
 import { Product } from '@/interfaces/tribe_resident/buyer/buyer';
+import { getImageSrcWithRetry, getFallbackImage } from '@/lib/imageUtils';
 
 /**
  * Represents a modal component for displaying and managing the shopping cart.
@@ -81,36 +82,7 @@ const CartModal: React.FC<CartModalProps> = ({ cart, onClose, removeFromCart, up
       return getFallbackImage(item);
     }
     
-    if (item.category === "小木屋鬆餅" || item.category === "金鰭" || item.category === "原丼力") {
-      return `/test/${encodeURIComponent(item.img)}`;
-    }
-    
-    if (item.img.startsWith('http')) {
-      return item.img;
-    }
-    
-    if (item.img.startsWith('/external-image/')) {
-      // Try different Carrefour URL formats
-      const baseUrl = 'https://online.carrefour.com.tw';
-      let url = '';
-      
-      if (retryCount === 0) {
-        url = `${baseUrl}${item.img}`;
-      } else if (retryCount === 1) {
-        // Try without the /external-image/ prefix
-        url = `${baseUrl}${item.img.replace('/external-image', '')}`;
-      } else if (retryCount === 2) {
-        // Try with different domain
-        url = `https://www.carrefour.com.tw${item.img}`;
-      } else {
-        return getFallbackImage(item);
-      }
-      
-      return url;
-    }
-    
-    const baseUrl = 'https://online.carrefour.com.tw';
-    return `${baseUrl}${item.img}`;
+    return getImageSrcWithRetry(item, retryCount);
   };
 
   return (

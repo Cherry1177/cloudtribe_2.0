@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Order } from '@/interfaces/tribe_resident/buyer/order';
 import DriverService from '@/services/driver/driver'
 import { TimeSlot } from '@/interfaces/driver/driver'
+import { getImageSrc, getFallbackImage } from '@/lib/imageUtils';
 
 
 /**
@@ -25,8 +26,9 @@ const OrderCard: React.FC<{
     onAccept: (orderId: string, service: string) => Promise<void>;
     onTransfer: (orderId: string, newDriverPhone: string) => Promise<void>;
     onComplete: (orderId: string, service: string) => Promise<void>;
+    onPickup?: (orderId: string, service: string) => Promise<void>;
     showCompleteButton?: boolean;
-}> = ({ order, driverId, onAccept, onTransfer, onComplete,showCompleteButton }) => {
+}> = ({ order, driverId, onAccept, onTransfer, onComplete, onPickup, showCompleteButton }) => {
 
     // State for managing the visibility of the transfer form
     const [showTransferForm, setShowTransferForm] = useState(false);
@@ -43,6 +45,9 @@ const OrderCard: React.FC<{
     const [acceptError, setAcceptError] = useState("");
     //state for drop agricultural product(if product is not put in the place that driver takes items)
     const [dropOrderMessage, setDropOrderMessage] = useState("");
+    // State for location-based delivery
+    const [isCheckingLocation, setIsCheckingLocation] = useState(false);
+    const [locationError, setLocationError] = useState("");
 
     // Calculate time remaining until order expires
     useEffect(() => {
@@ -113,19 +118,200 @@ const OrderCard: React.FC<{
     };
 
     /**
+     * Geocode an address to get coordinates
+     */
+    const geocodeAddress = (address: string): Promise<{lat: number, lng: number} | null> => {
+        return new Promise((resolve) => {
+            const geocoder = new google.maps.Geocoder();
+            geocoder.geocode({ address }, (results, status) => {
+                if (status === 'OK' && results && results[0]) {
+                    const location = results[0].geometry.location;
+                    resolve({ lat: location.lat(), lng: location.lng() });
+                } else {
+                    resolve(null);
+                }
+            });
+        });
+    };
+
+    /**
+     * Calculate distance between two coordinates in kilometers
+     */
+    const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+        const R = 6371; // Earth's radius in kilometers
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLng/2) * Math.sin(dLng/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    };
+
+    /**
+     * Check if driver is at delivery location
+     */
+    const checkDeliveryLocation = (): Promise<boolean> => {
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                setLocationError("此瀏覽器不支援定位功能");
+                resolve(false);
+                return;
+            }
+
+            setIsCheckingLocation(true);
+            setLocationError("");
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    try {
+                        const { latitude, longitude } = position.coords;
+                        
+                        // Use Google Maps Geocoding API to get address from coordinates
+                        const geocoder = new google.maps.Geocoder();
+                        const latlng = { lat: latitude, lng: longitude };
+                        
+                        geocoder.geocode({ location: latlng }, async (results, status) => {
+                            setIsCheckingLocation(false);
+                            
+                            if (status === 'OK' && results && results[0]) {
+                                const currentAddress = results[0].formatted_address;
+                                const deliveryLocation = order.location.toLowerCase();
+                                
+                                // Check if current location matches delivery location
+                                // More flexible matching logic
+                                const currentLower = currentAddress.toLowerCase();
+                                const deliveryLower = deliveryLocation.toLowerCase();
+                                
+                                // Extract key parts of addresses for comparison
+                                const extractKeywords = (addr: string) => {
+                                    return addr.split(/[,，\s]+/).filter(part => part.length > 1);
+                                };
+                                
+                                const currentKeywords = extractKeywords(currentLower);
+                                const deliveryKeywords = extractKeywords(deliveryLower);
+                                
+                                // Check for matches in key address components
+                                const hasMatch = deliveryKeywords.some(keyword => 
+                                    currentKeywords.some(current => 
+                                        current.includes(keyword) || keyword.includes(current)
+                                    )
+                                );
+                                
+                                // Also check distance-based matching (within 100 meters)
+                                const deliveryCoords = await geocodeAddress(order.location);
+                                let isNearby = false;
+                                
+                                if (deliveryCoords) {
+                                    const distance = calculateDistance(
+                                        latitude, longitude,
+                                        deliveryCoords.lat, deliveryCoords.lng
+                                    );
+                                    isNearby = distance <= 0.1; // Within 100 meters
+                                }
+                                
+                                const isAtLocation = hasMatch || isNearby;
+                                
+                                if (!isAtLocation) {
+                                    setLocationError(`您目前在：${currentAddress}\n配送地點：${order.location}\n請確認您已到達配送地點`);
+                                    console.log('Location verification failed:', {
+                                        currentAddress,
+                                        deliveryLocation: order.location,
+                                        hasMatch,
+                                        isNearby,
+                                        currentKeywords,
+                                        deliveryKeywords
+                                    });
+                                } else {
+                                    console.log('Location verification passed:', {
+                                        currentAddress,
+                                        deliveryLocation: order.location,
+                                        hasMatch,
+                                        isNearby
+                                    });
+                                }
+                                
+                                resolve(isAtLocation);
+                            } else {
+                                setLocationError("無法取得位置資訊，請稍後再試");
+                                resolve(false);
+                            }
+                        });
+                        
+                    } catch (error) {
+                        setIsCheckingLocation(false);
+                        setLocationError("定位失敗，請稍後再試");
+                        resolve(false);
+                    }
+                },
+                (error) => {
+                    setIsCheckingLocation(false);
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            setLocationError("請允許定位權限以完成配送");
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            setLocationError("無法取得位置資訊");
+                            break;
+                        case error.TIMEOUT:
+                            setLocationError("定位超時，請稍後再試");
+                            break;
+                        default:
+                            setLocationError("定位失敗，請稍後再試");
+                            break;
+                    }
+                    resolve(false);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 60000
+                }
+            );
+        });
+    };
+
+    /**
+     * Handle delivery completion with location check
+     */
+    const handleCompleteWithLocationCheck = async () => {
+        const isAtLocation = await checkDeliveryLocation();
+        
+        if (isAtLocation) {
+            try {
+                await onComplete(order.id?.toString() || '', order.service);
+                alert('配送完成！');
+            } catch (error) {
+                console.error('Error completing order:', error);
+                alert('完成配送失敗，請稍後再試');
+                throw error; // Re-throw to let parent handle the error
+            }
+        } else {
+            // Show location error - user needs to be at delivery location
+            const errorMessage = locationError || "請確認您已到達配送地點再完成配送";
+            alert(errorMessage);
+            throw new Error(errorMessage); // Throw error to prevent order removal
+        }
+    };
+
+    /**
      * Handle pickup confirmation
      */
     const handlePickupConfirmation = async () => {
         try {
-            const response = await fetch(`/api/orders/${order.service}/${order.id}/pickup`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            });
+            if (onPickup) {
+                await onPickup(order.id?.toString() || '', order.service);
+            } else {
+                const response = await fetch(`/api/orders/${order.service}/${order.id}/pickup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
 
-            if (!response.ok) {
-                throw new Error('Failed to confirm pickup');
+                if (!response.ok) {
+                    throw new Error('Failed to confirm pickup');
+                }
             }
 
             alert('已確認取貨！開始配送');
@@ -239,39 +425,7 @@ const OrderCard: React.FC<{
 
     }
 
-    const getImageSrc = (item: any) => {
-        console.log('Getting image src for item:', item);
-        let imageSrc;
-        if (item.category === "小木屋鬆餅" || item.category === "金鰭" || item.category === "原丼力") {
-            imageSrc = `/test/${encodeURIComponent(item.img)}`; // Local image
-        } else if (item.img?.includes('imgur.com') || item.img?.includes('ibb.co')) {
-            imageSrc = item.img; // Imgur/ImgBB image - direct URL
-        } else if (item.img?.startsWith('http')) {
-            imageSrc = item.img; // Any other HTTP URL
-        } else if (item.img?.startsWith('/external-image/')) {
-            // For Carrefour external images, try the direct URL first
-            imageSrc = `https://www.carrefour.com.tw${item.img}`; // Try Carrefour URL first
-        } else {
-            imageSrc = `https://www.cloudtribe.site${item.img}`; // CloudTribe image
-        }
-        console.log('Generated image src:', imageSrc);
-        return imageSrc;
-    };
-
-    const getFallbackImage = (item: any) => {
-        // Return appropriate fallback image based on category
-        if (item.category?.includes('茶') || item.category?.includes('飲料')) {
-            return '/fruit1.jpg'; // Use fruit image as fallback for drinks
-        } else if (item.category?.includes('水果') || item.category?.includes('fruit')) {
-            return '/fruit1.jpg';
-        } else if (item.category?.includes('蔬菜') || item.category?.includes('vegetable')) {
-            return '/vegetable1.jpg';
-        } else if (item.category?.includes('雞') || item.category?.includes('鴨') || item.category?.includes('肉')) {
-            return '/eat.jpg'; // Use food image for meat products
-        } else {
-            return '/box2.png'; // Default fallback
-        }
-    };
+    // Use standardized image handling from utils
 
 
 
@@ -303,7 +457,7 @@ const OrderCard: React.FC<{
                         )}
                     </div>
                 </div>
-                {order.order_status === '接單' && showCompleteButton && (
+                {order.order_status === '配送中' && showCompleteButton && (
                 <div>
                 <Button
                     className="bg-white text-black border border-black hover:text-black hover:bg-white transition-all duration-300"
@@ -312,12 +466,18 @@ const OrderCard: React.FC<{
                         if (!confirmedFirst) return;
                         const confirmedSecond = window.confirm("確認後將無法更改，確定要完成訂單？");
                         if (confirmedSecond) {
-                            onComplete(order.id?.toString() || "", order.service);
+                            handleCompleteWithLocationCheck();
                         }
                     }}
+                    disabled={isCheckingLocation}
                 >
-                    各別訂單物品已到達目的地
+                    {isCheckingLocation ? "🌍 檢查位置中..." : "各別訂單物品已到達目的地"}
                 </Button>
+                {locationError && (
+                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                        {locationError}
+                    </div>
+                )}
             </div>
             )}  
             </CardHeader>
@@ -574,11 +734,12 @@ const OrderCard: React.FC<{
                                         onClick={() => {
                                             const confirmed = window.confirm("確認已送達客戶手中？");
                                             if (confirmed && order.id) {
-                                                onComplete(order.id.toString(), order.service);
+                                                handleCompleteWithLocationCheck();
                                             }
                                         }}
+                                        disabled={isCheckingLocation}
                                     >
-                                        ✅ 確認送達
+                                        {isCheckingLocation ? "🌍 檢查位置中..." : "✅ 確認送達"}
                                     </Button>
                                 </>
                             ) : (

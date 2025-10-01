@@ -7,6 +7,7 @@ import PaginationDemo from "@/components/tribe_resident/buyer/PaginationDemo";
 import { Button } from "@/components/ui/button";
 import { Product } from '@/interfaces/tribe_resident/buyer/buyer';  
 import { ItemListProps } from '@/interfaces/tribe_resident/buyer/buyer';
+import { getImageSrcWithRetry, getFallbackImage } from '@/lib/imageUtils';
 
 /**
  * Renders a list of items with pagination and sorting functionality.
@@ -99,37 +100,7 @@ const ItemList: React.FC<ItemListProps> = ({ products, itemsPerPage, addToCart }
       return getFallbackImage(product);
     }
     
-    if (product.category === "小木屋鬆餅" || product.category === "金鰭" || product.category === "原丼力") {
-      return `/test/${encodeURIComponent(product.img)}`;
-    }
-    
-    if (product.img.startsWith('http')) {
-      return product.img;
-    }
-    
-    if (product.img.startsWith('/external-image/')) {
-      // Try different Carrefour URL formats
-      const baseUrl = 'https://online.carrefour.com.tw';
-      let url = '';
-      
-      if (retryCount === 0) {
-        url = `${baseUrl}${product.img}`;
-      } else if (retryCount === 1) {
-        // Try without the /external-image/ prefix
-        url = `${baseUrl}${product.img.replace('/external-image', '')}`;
-      } else if (retryCount === 2) {
-        // Try with different domain
-        url = `https://www.carrefour.com.tw${product.img}`;
-      } else {
-        return getFallbackImage(product);
-      }
-      
-      console.log(`Trying Carrefour image for product ${productId} (attempt ${retryCount + 1}): ${url}`);
-      return url;
-    }
-    
-    const baseUrl = 'https://online.carrefour.com.tw';
-    return `${baseUrl}${product.img}`;
+    return getImageSrcWithRetry(product, retryCount);
   };
 
   return (

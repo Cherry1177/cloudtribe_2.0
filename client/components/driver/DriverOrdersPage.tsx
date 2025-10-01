@@ -16,6 +16,7 @@ interface DriverOrdersPageProps {
     onTransfer: (orderId: string, newDriverPhone: string) => Promise<void>;
     onNavigate: (orderId: string) => void;
     onComplete: (orderId: string, service: string) => Promise<void>;
+    onPickup?: (orderId: string, service: string) => Promise<void>;
 }
 
 const useDebounce = (value: string, delay: number) => {
@@ -55,7 +56,8 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
     driverData, 
     onAccept, 
     onTransfer, 
-    onComplete 
+    onComplete,
+    onPickup 
 }) => {
     const [orders, setOrders] = useState<Order[]>([]);
     const router = useRouter();
@@ -171,7 +173,7 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
         const allLocations = new Set<string>();
         
         orders.forEach(order => {
-            if (order.order_status === "接單") {
+            if (order.order_status === "接單" || order.order_status === "配送中") {
                 // Add order location
                 if (order.location) {
                     allLocations.add(order.location);
@@ -262,13 +264,52 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
     // Handle local complete of order
     const handleLocalComplete = async (orderId: string, service: string) => {
         try {
-            // Call the complete API
+            // Call the complete API - this includes location verification
             await onComplete(orderId, service);
-            // Update the local state
+            
+            // Only remove from local state if completion was successful
+            // The onComplete function will throw an error if location verification fails
             setOrders(prevOrders => prevOrders.filter(order => order.id !== parseInt(orderId)));
+            
+            // Optionally refresh orders from server to ensure consistency
+            await fetchDriverOrders();
         } catch (error) {
             console.error('Error in handleLocalComplete:', error);
-            setError('完成訂單失敗');
+            // Don't remove the order from local state if completion failed
+            setError('完成訂單失敗 - 請確認您已到達配送地點');
+        }
+    };
+
+    // Handle local pickup confirmation
+    const handleLocalPickup = async (orderId: string, service: string) => {
+        try {
+            if (onPickup) {
+                await onPickup(orderId, service);
+            } else {
+                // Fallback to direct API call
+                const response = await fetch(`/api/orders/${service}/${orderId}/pickup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to confirm pickup');
+                }
+            }
+            
+            // Update the local state to change order status to 配送中
+            setOrders(prevOrders => 
+                prevOrders.map(order => 
+                    order.id === parseInt(orderId) 
+                        ? { ...order, order_status: '配送中' }
+                        : order
+                )
+            );
+        } catch (error) {
+            console.error('Error in handleLocalPickup:', error);
+            setError('確認取貨失敗');
         }
     };
 
@@ -291,7 +332,7 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
         return orderDate <= endDate;
       });
     }
-    if (orderStatus === "已完成") {
+    if (orderStatus === "已送達") {
       filtered = filtered.sort((a, b) => {
         if (!b.timestamp || !a.timestamp) return 0;
         return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
@@ -311,7 +352,12 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
     const aggregatedItemsByLocation = useMemo(() => {
         const locationMap: { [location: string]: { [itemName: string]: number } } = {};
 
-        finalFilteredOrders.forEach(order => {
+        // Only show aggregated items for active orders (接單 and 配送中)
+        const activeOrders = orders.filter(order => 
+            order.order_status === "接單" || order.order_status === "配送中"
+        );
+        
+        activeOrders.forEach(order => {
             order.items.forEach(item => {
                 const location = item.location || "未指定地點"; 
                 if (!locationMap[location]) {
@@ -408,10 +454,16 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
                         接單
                     </Button>
                     <Button
-                        variant={orderStatus === "已完成" ? "default" : "outline"}
-                        onClick={() => setOrderStatus("已完成")}
+                        variant={orderStatus === "配送中" ? "default" : "outline"}
+                        onClick={() => setOrderStatus("配送中")}
                     >
-                        已完成
+                        配送中
+                    </Button>
+                    <Button
+                        variant={orderStatus === "已送達" ? "default" : "outline"}
+                        onClick={() => setOrderStatus("已送達")}
+                    >
+                        配送歷史
                     </Button>
                 </div>
             </div>
@@ -510,7 +562,8 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
                             }}
                             onTransfer={(orderId: string, newDriverPhone: string) => handleLocalTransfer(orderId, newDriverPhone)}
                             onComplete={(orderId: string) => handleLocalComplete(orderId, order.service)}
-                            showCompleteButton={false} 
+                            onPickup={(orderId: string) => handleLocalPickup(orderId, order.service)}
+                            showCompleteButton={true} 
                         />
                     ))
                 ) : (

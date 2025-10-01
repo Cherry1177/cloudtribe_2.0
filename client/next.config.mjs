@@ -87,11 +87,31 @@ export default async (phase) => {
 
     // API path rewrite
     async rewrites() {
+      // Get network IP for development
+      const getNetworkIP = () => {
+        try {
+          const { networkInterfaces } = require('os');
+          const nets = networkInterfaces();
+          for (const name of Object.keys(nets)) {
+            for (const net of nets[name]) {
+              if (net.family === 'IPv4' && !net.internal) {
+                return net.address;
+              }
+            }
+          }
+          return 'localhost';
+        } catch {
+          return 'localhost';
+        }
+      };
+
+      const networkIP = isDev ? getNetworkIP() : 'localhost';
+      
       return [
         {
           source: "/api/:path*",
           destination: isDev
-            ? "http://localhost:8000/api/:path*"
+            ? `http://${networkIP}:8000/api/:path*`
             : "https://www.cloudtribe.site/api/:path*",
         },
       ];

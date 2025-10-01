@@ -120,7 +120,7 @@ export const NavigationBar = () => {
       <Menubar className='px-8 py-6 justify-between bg-[#003049] text-white w-full text-sm'>
         <div className='flex items-center space-x-4'>
           <Link href="/">
-          <Image src="/box2.png" alt="Logo" width={100} height={100} className="object-contain cursor-pointer" />
+          <Image src="/newlogo.png" alt="Logo" width={100} height={100} className="object-contain cursor-pointer" />
           </Link>
           <div className='flex flex-row space-x-10'>
           {/* Render each navigation link */}
@@ -142,7 +142,7 @@ export const NavigationBar = () => {
     return (
       <Menubar className='px-2 py-2 justify-between bg-[#003049] text-white w-full'>
         <div className='flex items-center space-x-1'>
-          <Image src={`/newlogo.png?v=${Date.now()}`} alt="Logo" width={40} height={40} className="bg-yellow-100 p-1" />
+          <Image src={`/newlogo.png`} alt="Logo" width={40} height={40} className="bg-yellow-100 p-1" />
         </div>
         <NavigationMenu className='z-50'>
           <NavigationMenuList>

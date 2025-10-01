@@ -24,6 +24,12 @@ import { Order } from "@/interfaces/tribe_resident/buyer/order";
 const ITEMS_PER_PAGE = 16;
 
 /**
+ * Generate a stable ID for new items
+ */
+let idCounter = 1;
+const generateStableId = () => `custom-item-${idCounter++}`;
+
+/**
  * A functional component representing the buyer's page where users can browse and add items to their cart.
  */
 const BuyerPage: React.FC = () => {
@@ -349,7 +355,7 @@ const BuyerPage: React.FC = () => {
           onClose={() => setIsAddItemFormOpen(false)}
           addToCart={(item) =>
             handleAddToCart(
-              { ...item, category: "Purchase", id: Date.now().toString() },
+              { ...item, category: "Purchase", id: generateStableId() },
               item.quantity
             )
           }
