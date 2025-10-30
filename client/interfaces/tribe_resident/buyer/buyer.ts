@@ -33,6 +33,14 @@ export type ItemListProps = {
   addToCart: (product: Product, quantity: number) => void;
 };
 
+export type ProductOption = {
+  id: string;         
+  label: string;           
+  min?: number;            
+  max?: number;           
+  choices: string[];       
+};
+
 export type Product = {
   category: string;
   img: string;
@@ -40,4 +48,7 @@ export type Product = {
   name: string;
   price: number;
   location?: string; // add location property (optional)
+
+  options?: ProductOption[];
+  selectedOptions?: Record<string, string[]>;
 };

@@ -310,7 +310,7 @@ const BuyerPage: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-xl p-8">
             {!initialLoad && (filteredProducts.length > 0 ? (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">商品列表</h2>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">商品列表(圖片僅供參考)</h2>
                 <ItemList
                   products={filteredProducts}
                   itemsPerPage={ITEMS_PER_PAGE}

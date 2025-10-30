@@ -160,6 +160,14 @@ const CartModal: React.FC<CartModalProps> = ({ cart, onClose, removeFromCart, up
                   </h2>
                   <h2 className="text-g font-bold truncate" style={{ maxWidth: "12rem" }}> 地點: {item.location}</h2>
                   
+                  {/* === 顯示選擇的醬料 === */}
+                  {item.selectedOptions?.sauce?.length ? (
+                    <p className="text-xs text-gray-600 mt-1">
+                      醬料：{item.selectedOptions.sauce.join('、')}
+                    </p>
+                  ) : null}
+                  {/* === 顯示選擇的醬料 結束 === */}
+                  
                   {/* Item price and quantity */}
                   <p> {Math.floor(item.price)} 元 x {item.quantity} = {Math.floor(item.price * item.quantity)} 元</p>
                   <div className="flex items-center justify-between">

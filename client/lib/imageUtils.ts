@@ -49,7 +49,7 @@ export const getImageSrc = (item: ImageItem): string => {
   const category = item.category || '';
 
   // Handle different image source types
-  if (category === "小木屋鬆餅" || category === "金鰭" || category === "原丼力") {
+  if (category === "小木屋鬆餅" || category === "金鮨" || category === "原丼力" || category === "得正" || category === "喜記港式燒臘" || category === "海南雞飯") {
     return `/test/${encodeURIComponent(img)}`; // Local test images
   } else if (img.includes('imgur.com') || img.includes('ibb.co')) {
     return img; // Direct external image URLs
@@ -82,7 +82,7 @@ export const getImageSrcWithRetry = (item: ImageItem, retryCount: number = 0): s
   const category = item.category || '';
 
   // Handle local test images
-  if (category === "小木屋鬆餅" || category === "金鰭" || category === "原丼力") {
+  if (category === "小木屋鬆餅" || category === "金鮨" || category === "原丼力" || category === "得正" || category === "喜記港式燒臘" || category === "海南雞飯" ) {
     return `/test/${encodeURIComponent(img)}`;
   }
 

@@ -38,8 +38,9 @@ type SidebarProps = {
 const categories = [
   {
     name: "政大周邊商家",
-    subcategories: ["小木屋鬆餅", "金鰭", "原丼力"],
+    subcategories: [/*"小木屋鬆餅"*/, "金鮨", /*"原丼力"*/, "得正", "喜記港式燒臘", "海南雞飯"],
   },
+  /*
   {
     name: "蔬菜水果．農特產",
     subcategories: ["各式蔬菜", "季節水果", "菇菌類"],
@@ -129,6 +130,7 @@ const categories = [
     name: "其它",
     subcategories: ["乾淨飲水", "濾水壺．濾芯", "濾心．濾芯", "飲水壺．保溫保冰"],
   },
+  */
 ];
 
 /**

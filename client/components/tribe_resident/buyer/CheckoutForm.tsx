@@ -49,7 +49,7 @@ const formatPredictionDisplay = (prediction: google.maps.places.AutocompletePred
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartItems, totalPrice }) => {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [location, setLocation] = useState<string>("");
+  const [location, setLocation] = useState<string>("大仁樓2樓實驗室");
   const [searchInput, setSearchInput] = useState<string>("");
   const [is_urgent, setIsUrgent] = useState(false);
   const [note, setNote] = useState<string>("");
@@ -280,7 +280,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
               <Label htmlFor="location" className="block text-sm font-medium text-gray-700">領貨的地點</Label>
               <Input
                 type="text"
+                //id="location"
                 value={location}
+                //readOnly
+                //className="bg-gray-100 text-gray-500 cursor-not-allowed w-full"
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="請輸入完整地址"
                 className="w-full"
