@@ -316,8 +316,8 @@ const OrderCard: React.FC<{
 
             alert('已確認取貨！開始配送');
             setShowPickupConfirmation(false);
-            // Refresh the page to update order status
-            window.location.reload();
+            // Note: Order status will be updated by parent component, no need to reload
+            // The card may disappear from "接單" tab view as it moves to "配送中" status
             
         } catch (error) {
             console.error('Error confirming pickup:', error);

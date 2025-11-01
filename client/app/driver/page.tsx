@@ -201,7 +201,9 @@ const DriverPage: React.FC = () => {
             await DriverService.handle_accept_order(service, parseInt(orderId), acceptOrder)
             alert('接單成功');
 
-            handleFetchUnacceptedOrders(); 
+            handleFetchUnacceptedOrders();
+            // Navigate to 管理訂單和導航 page
+            router.push('/navigation');
         } catch (error) {
             console.error('Error accepting order:', error);
             alert('接單失敗');

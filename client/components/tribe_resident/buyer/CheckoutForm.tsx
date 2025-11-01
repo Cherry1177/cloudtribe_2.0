@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter, SheetClose } from "@/components/ui/sheet";
@@ -47,6 +48,7 @@ const formatPredictionDisplay = (prediction: google.maps.places.AutocompletePred
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartItems, totalPrice }) => {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState<string>("大仁樓2樓實驗室");
@@ -57,6 +59,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
   const [error, setError] = useState("");
   const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [isManualInput, setIsManualInput] = useState(true);
+  const [showLocationSearch, setShowLocationSearch] = useState(false);
   // Initialize debounced search term
   const debouncedSearchTerm = useDebounce(searchInput, 800);
 
@@ -162,8 +165,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
       return;
     }
 
-    const currentLocation = hasApiKey ? searchInput : location;
-    if (!currentLocation) {
+    // Use location first (what's displayed on button), fall back to searchInput if needed
+    const currentLocation = location || (hasApiKey ? searchInput : '');
+    if (!currentLocation || currentLocation.trim() === '') {
       setError("未選擇地點");
       return;
     }
@@ -224,6 +228,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
       setTimeout(() => {
         setShowAlert(false);
         onClose();
+        // Redirect to purchased items page with pending tab
+        router.push('/consumer/purchased_item?tab=pending');
       }, 2000);
     } catch (error) {
       console.error('Error submitting order:', error);
@@ -277,17 +283,41 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
               />
             </div>
             <div className="mb-4">
-              <Label htmlFor="location" className="block text-sm font-medium text-gray-700">領貨的地點</Label>
-              <Input
-                type="text"
-                //id="location"
-                value={location}
-                //readOnly
-                //className="bg-gray-100 text-gray-500 cursor-not-allowed w-full"
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="請輸入完整地址"
-                className="w-full"
-              />
+              <Label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">領貨的地點</Label>
+              {!showLocationSearch ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowLocationSearch(true)}
+                  className="w-full justify-start text-left font-normal"
+                >
+                  {location || "請選擇地點"}
+                </Button>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      placeholder="請輸入完整地址"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowLocationSearch(false)}
+                    >
+                      完成
+                    </Button>
+                  </div>
+                  {location && (
+                    <div className="text-sm text-gray-600">
+                      選擇的地點: {location}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="mb-4">
               <Label htmlFor="urgent" className="block text-sm font-medium text-gray-700">是否是急件</Label>
@@ -359,14 +389,41 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
               />
             </div>
             <div className="mb-4">
-              <Label htmlFor="location" className="block text-sm font-medium text-gray-700">領貨的地點</Label>
-              <Input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="請輸入完整地址"
-                className="w-full"
-              />
+              <Label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">領貨的地點</Label>
+              {!showLocationSearch ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowLocationSearch(true)}
+                  className="w-full justify-start text-left font-normal"
+                >
+                  {location || "請選擇地點"}
+                </Button>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      placeholder="請輸入完整地址"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowLocationSearch(false)}
+                    >
+                      完成
+                    </Button>
+                  </div>
+                  {location && (
+                    <div className="text-sm text-gray-600">
+                      選擇的地點: {location}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="mb-4">
               <Label htmlFor="urgent" className="block text-sm font-medium text-gray-700">是否是急件</Label>
@@ -432,36 +489,64 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
             />
           </div>
           <div className="mb-4 relative">
-            <Label htmlFor="location" className="block text-sm font-medium text-gray-700">領貨的地點</Label>
-            <div className="relative">
-              <Input
-                type="text"
-                value={hasApiKey ? searchInput : location}
-                onChange={hasApiKey ? handleInputChange : (e) => setLocation(e.target.value)}
-                placeholder={hasApiKey ? "搜尋地點" : "請輸入完整地址"}
-                className="w-full"
-              />
-              {predictions.length > 0 && (
-                <div className="absolute z-50 w-full bg-white mt-1 rounded-md shadow-lg max-h-60 overflow-auto">
-                  {predictions.map((prediction) => {
-                    const { businessName, address } = formatPredictionDisplay(prediction);
-                    return (
-                      <div
-                        key={prediction.place_id}
-                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
-                        onClick={() => handlePlaceSelect(prediction.place_id)}
-                      >
-                        <div className="font-medium text-gray-900">{businessName}</div>
-                        <div className="text-sm text-gray-500">{address}</div>
-                      </div>
-                    );
-                  })}
+            <Label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">領貨的地點</Label>
+            {!showLocationSearch ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowLocationSearch(true)}
+                className="w-full justify-start text-left font-normal"
+              >
+                {location || (hasApiKey ? "搜尋地點" : "請選擇地點")}
+              </Button>
+            ) : (
+              <div className="relative space-y-2">
+                <div className="relative">
+                  <Input
+                    type="text"
+                    value={hasApiKey ? searchInput : location}
+                    onChange={hasApiKey ? handleInputChange : (e) => setLocation(e.target.value)}
+                    placeholder={hasApiKey ? "搜尋地點" : "請輸入完整地址"}
+                    className="w-full pr-20"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowLocationSearch(false);
+                      setPredictions([]);
+                    }}
+                    className="absolute right-1 top-1 h-8"
+                  >
+                    完成
+                  </Button>
                 </div>
-              )}
-            </div>
-            {location && (
-              <div className="mt-2 text-sm text-gray-600">
-                選擇的地點: {location}
+                {predictions.length > 0 && (
+                  <div className="absolute z-50 w-full bg-white mt-1 rounded-md shadow-lg max-h-60 overflow-auto border">
+                    {predictions.map((prediction) => {
+                      const { businessName, address } = formatPredictionDisplay(prediction);
+                      return (
+                        <div
+                          key={prediction.place_id}
+                          className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                          onClick={() => {
+                            handlePlaceSelect(prediction.place_id);
+                            setShowLocationSearch(false);
+                          }}
+                        >
+                          <div className="font-medium text-gray-900">{businessName}</div>
+                          <div className="text-sm text-gray-500">{address}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {location && (
+                  <div className="text-sm text-gray-600">
+                    選擇的地點: {location}
+                  </div>
+                )}
               </div>
             )}
           </div>

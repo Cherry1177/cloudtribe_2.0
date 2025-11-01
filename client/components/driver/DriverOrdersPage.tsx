@@ -307,6 +307,11 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
                         : order
                 )
             );
+            
+            // Automatically switch to "配送中" tab so the card doesn't disappear
+            if (orderStatus === "接單") {
+                setOrderStatus("配送中");
+            }
         } catch (error) {
             console.error('Error in handleLocalPickup:', error);
             setError('確認取貨失敗');

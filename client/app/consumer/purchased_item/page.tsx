@@ -14,24 +14,28 @@ import { Order } from '@/interfaces/tribe_resident/buyer/order';
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function Page(){
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  // Initialize defaultTab from URL parameter synchronously
+  const initialTab = searchParams.get('tab') === 'pending' ? '未接單' : 'all';
+  
   const [user, setUser] = useState<User>()
   const [purchasedItems, setPurchasedItems] = useState<PurchasedProduct[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>("")
   const [viewMode, setViewMode] = useState<'enhanced' | 'legacy'>('enhanced')
-  const [defaultTab, setDefaultTab] = useState<string>('all')
-  const router = useRouter()
-  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState<string>(initialTab)
 
   useEffect(() => {
     const _user = UserSrevice.getLocalStorageUser();
     setUser(_user);
     
-    // Check URL parameter for tab selection
+    // Check URL parameter for tab selection (update if it changes)
     const tab = searchParams.get('tab');
     if (tab === 'pending') {
-      setDefaultTab('未接單'); // Set to pending orders tab
+      setActiveTab('未接單'); // Set to pending orders tab
     }
     
     if (_user.name === 'empty') {
@@ -145,7 +149,7 @@ export default function Page(){
 
             {/* Enhanced Order Tabs */}
             {!loading && !error && (
-              <Tabs defaultValue={defaultTab} className="w-full">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="all">全部 ({orders.length})</TabsTrigger>
                   <TabsTrigger value="未接單">⏳ 未接單 ({getOrdersByStatus('未接單').length})</TabsTrigger>

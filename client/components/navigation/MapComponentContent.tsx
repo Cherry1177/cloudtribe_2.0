@@ -768,6 +768,8 @@ const MapComponentContent: React.FC = () => {
         }
         await DriverService.handle_accept_order(service, parseInt(orderId), acceptOrder)
         alert('接單成功');
+        // Navigate to 管理訂單和導航 page
+        router.push('/navigation');
 
     } catch (error) {
         console.error('Error accepting order:', error);
