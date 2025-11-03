@@ -51,6 +51,40 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orde
     }
   };
 
+  // Handle order cancellation
+  const handleCancelOrder = async (orderId: number, service: string) => {
+    if (!user || !user.id) {
+      alert('無法取消訂單：使用者資訊不存在');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/orders/${service}/${orderId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ buyer_id: user.id }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || '取消訂單失敗');
+      }
+
+      const result = await response.json();
+      alert(result.message || '訂單已成功取消');
+      
+      // Refresh orders after cancellation
+      await fetchBuyerOrders();
+    } catch (error) {
+      console.error('Error cancelling order:', error);
+      const errorMessage = error instanceof Error ? error.message : '取消訂單失敗，請稍後再試';
+      alert(errorMessage);
+      throw error; // Re-throw to let BuyerOrderCard handle it
+    }
+  };
+
   // Fetch orders when component opens
   useEffect(() => {
     if (isOpen && user && user.id) {
@@ -183,7 +217,11 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ isOpen, onClose, orde
               finalFilteredOrders.length > 0 ? (
                 <div className="space-y-4 mt-4">
                   {finalFilteredOrders.map((order) => (
-                    <BuyerOrderCard key={`${order.service}-${order.id}`} order={order} />
+                    <BuyerOrderCard 
+                      key={`${order.service}-${order.id}`} 
+                      order={order} 
+                      onCancel={handleCancelOrder}
+                    />
                   ))}
                 </div>
               ) : (

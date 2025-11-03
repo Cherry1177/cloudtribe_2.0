@@ -13,7 +13,6 @@ import { Alert } from "@/components/ui/alert";
 interface DriverOrdersPageProps {
     driverData: Driver;
     onAccept: (orderId: string, service: string) => Promise<void>;
-    onTransfer: (orderId: string, newDriverPhone: string) => Promise<void>;
     onNavigate: (orderId: string) => void;
     onComplete: (orderId: string, service: string) => Promise<void>;
     onPickup?: (orderId: string, service: string) => Promise<void>;
@@ -55,9 +54,8 @@ const useDebounce = (value: string, delay: number) => {
 const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({ 
     driverData, 
     onAccept, 
-    onTransfer, 
     onComplete,
-    onPickup 
+    onPickup
 }) => {
     const [orders, setOrders] = useState<Order[]>([]);
     const router = useRouter();
@@ -248,18 +246,6 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
         fetchDriverOrders();
     }, [driverData, fetchDriverOrders]);
 
-    // Handle local transfer of order
-    const handleLocalTransfer = async (orderId: string, newDriverPhone: string) => {
-        try {
-            // Call the transfer API
-            await onTransfer(orderId, newDriverPhone);
-            // Update the local state
-            setOrders(prevOrders => prevOrders.filter(order => order.id !== parseInt(orderId)));
-        } catch (error) {
-            console.error('Error in handleLocalTransfer:', error);
-            setError('轉單失敗，填寫電話號碼的司機未註冊，請重新整理頁面讓表單重新出現');
-        }
-    };
 
     // Handle local complete of order
     const handleLocalComplete = async (orderId: string, service: string) => {
@@ -283,6 +269,9 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
     // Handle local pickup confirmation
     const handleLocalPickup = async (orderId: string, service: string) => {
         try {
+            // Find the order to get its location before updating
+            const currentOrder = orders.find(order => order.id === parseInt(orderId));
+            
             if (onPickup) {
                 await onPickup(orderId, service);
             } else {
@@ -311,6 +300,15 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
             // Automatically switch to "配送中" tab so the card doesn't disappear
             if (orderStatus === "接單") {
                 setOrderStatus("配送中");
+            }
+            
+            // Automatically navigate to GPS navigation page after confirming pickup
+            if (currentOrder && currentOrder.location && driverData?.id) {
+                // Wait a moment for the status update to complete, then navigate
+                setTimeout(() => {
+                    const navUrl = `/navigation?orderId=${orderId}&driverId=${driverData.id}&destination=${encodeURIComponent(currentOrder.location)}`;
+                    window.open(navUrl, '_blank');
+                }, 500);
             }
         } catch (error) {
             console.error('Error in handleLocalPickup:', error);
@@ -565,7 +563,6 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
                                 console.log(`Order ${orderId} accepted`);
                                 await onAccept(orderId, order.service);
                             }}
-                            onTransfer={(orderId: string, newDriverPhone: string) => handleLocalTransfer(orderId, newDriverPhone)}
                             onComplete={(orderId: string) => handleLocalComplete(orderId, order.service)}
                             onPickup={(orderId: string) => handleLocalPickup(orderId, order.service)}
                             showCompleteButton={true} 

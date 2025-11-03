@@ -30,9 +30,13 @@ const DriverPage: React.FC = () => {
     const [isClient, setIsClient] = useState(false); 
     const [showAddTimeTip, setShowAddTimeTip] = useState(true);
 
-    // add state for showing unaccepted orders
-    const [showUnacceptedOrders, setShowUnacceptedOrders] = useState(false);
+    // add state for showing unaccepted orders - default to true so drivers see orders immediately
+    const [showUnacceptedOrders, setShowUnacceptedOrders] = useState(true);
     const [showHistoryManagement, setShowHistoryManagement] = useState(false);
+    const [pendingTransfers, setPendingTransfers] = useState<any[]>([]);
+    const [showPendingTransfers, setShowPendingTransfers] = useState(false);
+    const [overdueOrders, setOverdueOrders] = useState<any[]>([]);
+    const [overdueCount, setOverdueCount] = useState<number>(0);
 
 
 
@@ -87,6 +91,12 @@ const DriverPage: React.FC = () => {
                     console.log('Driver data loaded:', data);
                     setDriverData(data);
                     handleFetchDriverOrders(data.id);
+                    // Fetch overdue orders when driver data is loaded
+                    handleFetchOverdueOrders(data.id);
+                    // Automatically fetch unaccepted orders when driver data is loaded
+                    if (showUnacceptedOrders) {
+                        handleFetchUnacceptedOrders();
+                    }
                 }
             } catch (error) {
                 console.error('Error fetching driver data:', error);
@@ -169,11 +179,37 @@ const DriverPage: React.FC = () => {
         }
     };
 
+    /**
+     * Fetch overdue orders for the driver (orders accepted more than 2 hours ago and not completed).
+     * @param driverId - The driver's ID.
+     */
+    const handleFetchOverdueOrders = async (driverId: number) => {
+        try {
+            const response = await fetch(`/api/drivers/${driverId}/overdue-orders`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch overdue orders');
+            }
+            const data = await response.json();
+            setOverdueOrders(data.overdue_orders || []);
+            setOverdueCount(data.overdue_count || 0);
+        } catch (error) {
+            console.error('Error fetching overdue orders:', error);
+            setOverdueOrders([]);
+            setOverdueCount(0);
+        }
+    };
+
 
 
     //New Version to handle accepting an order
     
     const handleAcceptOrder = async (orderId: string, service: string) => {
+        // Check if driver has overdue orders
+        if (overdueCount > 0) {
+            alert(`您有 ${overdueCount} 筆訂單超過 2 小時未完成配送，請先完成已接受的訂單後再接受新訂單`);
+            return;
+        }
+
         // First confirmation
         const confirmFirst = window.confirm("您確定要接單嗎？");
         if (!confirmFirst) return;
@@ -201,60 +237,70 @@ const DriverPage: React.FC = () => {
             await DriverService.handle_accept_order(service, parseInt(orderId), acceptOrder)
             alert('接單成功');
 
+            // Refresh overdue orders and unaccepted orders
+            await handleFetchOverdueOrders(driverData.id);
             handleFetchUnacceptedOrders();
-            // Navigate to 管理訂單和導航 page
-            router.push('/navigation');
-        } catch (error) {
-            console.error('Error accepting order:', error);
-            alert('接單失敗');
-        }
-    };
-
-    /**
-     * Handle transferring an order.
-     * @param orderId - The ID of the order to transfer.
-     * @param newDriverPhone - The phone number of the new driver.
-     */
-    const handleTransferOrder = async (orderId: string, newDriverPhone: string) => {      
-        try {
-            const response = await fetch(`/api/orders/${orderId}/transfer`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ current_driver_id: driverData?.id, new_driver_phone: newDriverPhone }),
-            });
-    
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Failed to transfer order: ${errorText}`);
+            // Navigate to 管理訂單和導航 page with order information for consistent navigation
+            // The navigation page will handle displaying driver orders when driverId is provided
+            if (driverData?.id) {
+                router.push(`/navigation?driverId=${driverData.id}`);
+            } else {
+                router.push('/navigation');
             }
-    
-            alert('轉單成功，已成功交給目標司機');
-            await handleFetchUnacceptedOrders();
-
-        } catch (error) {
-
-
-            console.error('Error transferring order:', error);
-            alert('轉單失敗，請重新整理頁面讓表單重新出現');
+        } catch (error: any) {
+            // Handle errors gracefully without showing console errors
+            const errorMessage = error?.message?.includes('無法接取自己的訂單') 
+                ? '無法接取自己的訂單'
+                : error?.message?.includes('已被接')
+                ? '訂單已被其他司機接走'
+                : error?.message?.includes('訂單未找到')
+                ? '訂單不存在'
+                : error?.message?.includes('超過 2 小時未完成配送')
+                ? error.message
+                : '接單失敗，請稍後再試';
+            
+            alert(errorMessage);
         }
     };
+
 
     /**
      * Handle navigating to order details.
      * @param orderId - The ID of the order to navigate to.
      * @param driverId - The driver's ID.
      */
-    const handleNavigate = (orderId: string, driverId: number) => {
-        router.push(`/navigation?orderId=${orderId}&driverId=${driverId}`);
+    const handleNavigate = async (orderId: string, driverId: number) => {
+        try {
+            // Fetch order data to get destination location for consistent navigation
+            const orderResponse = await fetch(`/api/orders/${orderId}`);
+            if (orderResponse.ok) {
+                const orderData = await orderResponse.json();
+                if (orderData.location) {
+                    // Use same format as other navigation calls: orderId, driverId, and destination
+                    const navUrl = `/navigation?orderId=${orderId}&driverId=${driverId}&destination=${encodeURIComponent(orderData.location)}`;
+                    router.push(navUrl);
+                } else {
+                    // Fallback if location is not available
+                    router.push(`/navigation?orderId=${orderId}&driverId=${driverId}`);
+                }
+            } else {
+                // Fallback if order fetch fails
+                router.push(`/navigation?orderId=${orderId}&driverId=${driverId}`);
+            }
+        } catch (error) {
+            console.error('Error fetching order for navigation:', error);
+            // Fallback if there's an error
+            router.push(`/navigation?orderId=${orderId}&driverId=${driverId}`);
+        }
     };
 
     /**
      * Handle completing an order.
      * @param orderId - The ID of the order to complete.
      */
-    const handleCompleteOrder = async (orderId: string, service: string) => {     
+    const handleCompleteOrder = async (orderId: string, service: string) => {
+        if (!driverData?.id) return;
+        
         try {
             const response = await fetch(`/api/orders/${service}/${orderId}/complete`, {
                 method: 'POST',
@@ -268,6 +314,10 @@ const DriverPage: React.FC = () => {
             }
 
             alert('訂單已完成');
+            
+            // Refresh overdue orders and driver orders after completion
+            await handleFetchOverdueOrders(driverData.id);
+            await handleFetchDriverOrders(driverData.id);
 
         } catch (error) {
             console.error('Error completing order:', error);
@@ -298,6 +348,24 @@ const DriverPage: React.FC = () => {
             // Refresh driver orders
             if (driverData?.id) {
                 handleFetchDriverOrders(driverData.id);
+            }
+            
+            // Fetch order details to get location, then navigate to GPS navigation page
+            try {
+                const orderResponse = await fetch(`/api/orders/${orderId}`);
+                if (orderResponse.ok) {
+                    const orderData = await orderResponse.json();
+                    if (orderData.location && driverData?.id) {
+                        // Wait a moment for the status update to complete, then navigate
+                        setTimeout(() => {
+                            const navUrl = `/navigation?orderId=${orderId}&driverId=${driverData.id}&destination=${encodeURIComponent(orderData.location)}`;
+                            window.open(navUrl, '_blank');
+                        }, 500);
+                    }
+                }
+            } catch (orderError) {
+                console.error('Error fetching order details for navigation:', orderError);
+                // If fetching order fails, still proceed - navigation is optional
             }
 
         } catch (error) {
@@ -343,6 +411,118 @@ const DriverPage: React.FC = () => {
             }
             return newState;
         });
+    };
+
+    // Auto-fetch unaccepted orders when driver data is loaded and list should be shown
+    useEffect(() => {
+        if (isClient && user?.is_driver && driverData && showUnacceptedOrders && unacceptedOrders.length === 0) {
+            handleFetchUnacceptedOrders();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isClient, user?.is_driver, driverData?.id, showUnacceptedOrders]);
+
+    /**
+     * Fetch pending transfer requests for the driver
+     */
+    const handleFetchPendingTransfers = async () => {
+        if (!driverData?.id) return;
+        
+        try {
+            const response = await fetch(`/api/orders/pending-transfers/${driverData.id}`);
+            if (response.ok) {
+                const data = await response.json();
+                setPendingTransfers(data);
+            }
+        } catch (error) {
+            console.error('Error fetching pending transfers:', error);
+        }
+    };
+
+    // Auto-fetch pending transfers and overdue orders when driver data is loaded
+    useEffect(() => {
+        if (driverData?.id) {
+            handleFetchPendingTransfers();
+            handleFetchOverdueOrders(driverData.id);
+            // Poll for new pending transfers every 30 seconds
+            const pendingTransfersInterval = setInterval(handleFetchPendingTransfers, 30000);
+            // Poll for overdue orders every 60 seconds
+            const overdueOrdersInterval = setInterval(() => handleFetchOverdueOrders(driverData.id), 60000);
+            return () => {
+                clearInterval(pendingTransfersInterval);
+                clearInterval(overdueOrdersInterval);
+            };
+        }
+    }, [driverData?.id]);
+
+    /**
+     * Handle accepting a pending transfer
+     */
+    const handleAcceptPendingTransfer = async (transferId: number) => {
+        if (!driverData?.id) return;
+        
+        const confirmed = window.confirm('確定要接受此轉單請求嗎？');
+        if (!confirmed) return;
+        
+        try {
+            const response = await fetch(`/api/orders/pending-transfers/${transferId}/accept`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ driver_id: driverData.id }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || '接受轉單失敗');
+            }
+
+            const result = await response.json();
+            alert(result.message || '轉單已成功接受');
+            
+            // Refresh data
+            await handleFetchPendingTransfers();
+            if (driverData.id) {
+                handleFetchDriverOrders(driverData.id);
+            }
+        } catch (error: any) {
+            console.error('Error accepting pending transfer:', error);
+            alert(error?.message || '接受轉單失敗');
+        }
+    };
+
+    /**
+     * Handle rejecting a pending transfer
+     */
+    const handleRejectPendingTransfer = async (transferId: number) => {
+        if (!driverData?.id) return;
+        
+        const confirmed = window.confirm('確定要拒絕此轉單請求嗎？');
+        if (!confirmed) return;
+
+        try {
+            const response = await fetch(`/api/orders/pending-transfers/${transferId}/reject`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ driver_id: driverData.id }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || '拒絕轉單失敗');
+            }
+
+            const result = await response.json();
+            alert(result.message || '轉單請求已拒絕');
+            
+            // Refresh pending transfers
+            await handleFetchPendingTransfers();
+        } catch (error: any) {
+            console.error('Error rejecting pending transfer:', error);
+            alert(error?.message || '拒絕轉單失敗');
+        }
     };
 
     return (
@@ -453,6 +633,39 @@ const DriverPage: React.FC = () => {
                         {/* If user is a driver */}
                         {isClient && user?.is_driver && driverData && (
                             <div className="w-full space-y-6">
+                                {/* Overdue Orders Warning */}
+                                {overdueCount > 0 && (
+                                    <Card className="w-full border-2 border-red-500 bg-gradient-to-r from-red-50 to-orange-50">
+                                        <CardHeader>
+                                            <CardTitle className="text-xl font-bold text-red-700 flex items-center">
+                                                <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                </svg>
+                                                嚴重警告：您有逾期訂單
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <p className="text-red-700 font-semibold mb-2">
+                                                您有 {overdueCount} 筆訂單超過 2 小時未完成配送！
+                                            </p>
+                                            <p className="text-red-600 mb-3">
+                                                在完成這些訂單之前，您無法接受新訂單。請立即完成已接受的訂單。
+                                            </p>
+                                            <div className="space-y-2">
+                                                {overdueOrders.map((order: any) => (
+                                                    <div key={order.order_id} className="bg-white p-3 rounded border border-red-300">
+                                                        <p className="text-sm font-medium">
+                                                            訂單 #{order.order_id} ({order.service === 'necessities' ? '生活用品' : '農產品'})
+                                                        </p>
+                                                        <p className="text-xs text-gray-600">
+                                                            狀態: {order.order_status} | 接受時間: {order.accepted_at ? new Date(order.accepted_at).toLocaleString('zh-TW') : 'N/A'}
+                                                        </p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                )}
                                 {/* Driver Available Times */}
                                 <Card className="w-full hover:shadow-xl transition-all duration-300 border-2 border-green-200 hover:border-green-400 bg-white">
                                     <CardHeader className="pb-4">
@@ -527,6 +740,67 @@ const DriverPage: React.FC = () => {
                                     </Card>
                                 </div>
 
+                                {/* Pending Transfers Notification */}
+                                {pendingTransfers.length > 0 && (
+                                    <Card className="w-full hover:shadow-xl transition-all duration-300 border-2 border-yellow-400 hover:border-yellow-500 bg-gradient-to-r from-yellow-50 to-orange-50">
+                                        <CardHeader>
+                                            <div className="flex items-center justify-between">
+                                                <CardTitle className="text-xl font-bold text-gray-900 flex items-center">
+                                                    <span className="relative">
+                                                        待處理轉單請求
+                                                        <span className="absolute -top-2 -right-6 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                                                            {pendingTransfers.length}
+                                                        </span>
+                                                    </span>
+                                                </CardTitle>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => setShowPendingTransfers(!showPendingTransfers)}
+                                                >
+                                                    {showPendingTransfers ? '隱藏' : '顯示'}
+                                                </Button>
+                                            </div>
+                                        </CardHeader>
+                                        {showPendingTransfers && (
+                                            <CardContent>
+                                                <div className="space-y-4">
+                                                    {pendingTransfers.map((transfer) => (
+                                                        <div key={transfer.id} className="bg-white p-4 rounded-lg border-2 border-yellow-200">
+                                                            <div className="flex items-start justify-between mb-3">
+                                                                <div>
+                                                                    <p className="font-semibold text-gray-900">訂單編號: {transfer.order_id}</p>
+                                                                    <p className="text-sm text-gray-600">轉單來自: {transfer.current_driver_name}</p>
+                                                                    <p className="text-sm text-gray-600">聯絡電話: {transfer.current_driver_phone}</p>
+                                                                    {transfer.expires_at && (
+                                                                        <p className="text-xs text-gray-500 mt-1">
+                                                                            到期時間: {new Date(transfer.expires_at).toLocaleString('zh-TW')}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <Button
+                                                                    className="flex-1 bg-green-500 hover:bg-green-600 text-white"
+                                                                    onClick={() => handleAcceptPendingTransfer(transfer.id)}
+                                                                >
+                                                                    接受轉單
+                                                                </Button>
+                                                                <Button
+                                                                    className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+                                                                    onClick={() => handleRejectPendingTransfer(transfer.id)}
+                                                                >
+                                                                    拒絕轉單
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </CardContent>
+                                        )}
+                                    </Card>
+                                )}
+
                                 {/* Unaccepted Orders List */}
                                 {showUnacceptedOrders && (
                                     <Card className="w-full hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-gray-400 bg-white">
@@ -539,10 +813,10 @@ const DriverPage: React.FC = () => {
                                             <OrderListWithPagination
                                                 orders={unacceptedOrders}
                                                 onAccept={handleAcceptOrder}
-                                                onTransfer={handleTransferOrder}
                                                 onNavigate={(orderId: string) => handleNavigate(orderId, driverData?.id || 0)}
                                                 onComplete={handleCompleteOrder}
                                                 driverId={driverData?.id || 0}
+                                                hasOverdueOrders={overdueCount > 0}
                                             />
                                         </CardContent>
                                     </Card>
@@ -602,7 +876,6 @@ const DriverPage: React.FC = () => {
                             <DriverOrdersPage 
                                 driverData={driverData} 
                                 onAccept={handleAcceptOrder}
-                                onTransfer={handleTransferOrder}
                                 onNavigate={(orderId: string) => handleNavigate(orderId, driverData?.id || 0)}
                                 onComplete={handleCompleteOrder}
                                 onPickup={handlePickupOrder}

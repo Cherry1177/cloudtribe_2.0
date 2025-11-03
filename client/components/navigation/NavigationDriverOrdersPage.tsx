@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 interface DriverOrdersPageProps {
   driverData: Driver;
   onAccept: (orderId: string, service: string) => Promise<void>;
-  onTransfer: (orderId: string, newDriverPhone: string) => Promise<void>;
   onComplete: (orderId: string, service: string) => Promise<void>;
 }
 
@@ -24,7 +23,6 @@ interface DriverOrdersPageProps {
 const NavigationDriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
   driverData,
   onAccept,
-  onTransfer,
   onComplete
 }) => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -62,18 +60,6 @@ const NavigationDriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
     fetchDriverOrders();
   }, [driverData, fetchDriverOrders]);
 
-  // Handle local transfer of order
-  const handleLocalTransfer = async (orderId: string, newDriverPhone: string) => {
-    try {
-      // Call the transfer API
-      await onTransfer(orderId, newDriverPhone);
-      // Update the local state
-      setOrders(prevOrders => prevOrders.filter(order => order.id !== parseInt(orderId)));
-    } catch (error) {
-      console.error('Error in handleLocalTransfer:', error);
-      setError('轉單失敗，填寫電話號碼的司機未註冊,請重新整理頁面讓表單重新出現');
-    }
-  };
 
   // Handle local complete of order
   const handleLocalComplete = async (orderId: string, service: string) => {
@@ -206,7 +192,6 @@ const NavigationDriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
               onAccept={async (orderId: string) => {
                 await onAccept(orderId, order.service);
               }}
-              onTransfer={(orderId: string, newDriverPhone: string) => handleLocalTransfer(orderId, newDriverPhone)}
               onComplete={(orderId: string) => handleLocalComplete(orderId, order.service)}
               showCompleteButton={true}
             />

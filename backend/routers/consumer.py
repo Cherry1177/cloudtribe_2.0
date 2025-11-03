@@ -281,6 +281,20 @@ async def purchase_product(req: PurchaseProductRequest, conn: Connection = Depen
     })
 
     try:
+        # Validate quantity - limit to 30 products per order
+        MAX_PRODUCTS_PER_ORDER = 30
+        if req.quantity > MAX_PRODUCTS_PER_ORDER:
+            log_event("PURCHASE_FAILED", {
+                "buyer_id": req.buyer_id,
+                "quantity": req.quantity,
+                "max_allowed": MAX_PRODUCTS_PER_ORDER,
+                "reason": "Exceeds maximum products per order"
+            })
+            raise HTTPException(
+                status_code=400,
+                detail=f"每筆訂單最多只能訂購 {MAX_PRODUCTS_PER_ORDER} 個商品。您目前訂購了 {req.quantity} 個商品，請減少數量。"
+            )
+        
         cur.execute("SELECT phone FROM users WHERE id = %s", (req.buyer_id,))
         result = cur.fetchone()
         if result is None:

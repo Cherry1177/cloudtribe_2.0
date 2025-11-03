@@ -16,7 +16,6 @@ import { getImageSrc, getFallbackImage } from '@/lib/imageUtils';
  * @param {Order} props.order - The order object containing details of the order.
  * @param {number} props.driverId - The ID of the driver handling the order.
  * @param {Function} props.onAccept - Callback function to accept the order.
- * @param {Function} props.onTransfer - Callback function to transfer the order to a new driver.
  * @param {Function} props.onNavigate - Callback function to navigate to the order's location.
  * @param {Function} props.onComplete - Callback function to mark the order as completed.
  */
@@ -24,23 +23,17 @@ const OrderCard: React.FC<{
     order: Order;
     driverId: number;
     onAccept: (orderId: string, service: string) => Promise<void>;
-    onTransfer: (orderId: string, newDriverPhone: string) => Promise<void>;
     onComplete: (orderId: string, service: string) => Promise<void>;
     onPickup?: (orderId: string, service: string) => Promise<void>;
     showCompleteButton?: boolean;
-}> = ({ order, driverId, onAccept, onTransfer, onComplete, onPickup, showCompleteButton }) => {
+    hasOverdueOrders?: boolean;
+}> = ({ order, driverId, onAccept, onComplete, onPickup, showCompleteButton, hasOverdueOrders = false }) => {
 
-    // State for managing the visibility of the transfer form
-    const [showTransferForm, setShowTransferForm] = useState(false);
     const [timeRemaining, setTimeRemaining] = useState<string>('');
     const [showExpiryActions, setShowExpiryActions] = useState(false);
     const [selectedExpiryAction, setSelectedExpiryAction] = useState<string>('');
     const [expiryReason, setExpiryReason] = useState<string>('');
     const [showPickupConfirmation, setShowPickupConfirmation] = useState<boolean>(false);
-    // State for the new driver's phone number input
-    const [newDriverPhone, setNewDriverPhone] = useState("");
-    // State for error messages related to transfer operations
-    const [transferError, setTransferError] = useState("");
     // State for error messages related to accepting the order
     const [acceptError, setAcceptError] = useState("");
     //state for drop agricultural product(if product is not put in the place that driver takes items)
@@ -319,6 +312,15 @@ const OrderCard: React.FC<{
             // Note: Order status will be updated by parent component, no need to reload
             // The card may disappear from "接單" tab view as it moves to "配送中" status
             
+            // Automatically navigate to delivery location after confirming pickup
+            if (order.id && driverId && order.location) {
+                // Wait a moment for the status update to complete
+                setTimeout(() => {
+                    const navUrl = `/navigation?orderId=${order.id}&driverId=${driverId}&destination=${encodeURIComponent(order.location)}`;
+                    window.open(navUrl, '_blank');
+                }, 500);
+            }
+            
         } catch (error) {
             console.error('Error confirming pickup:', error);
             alert('確認取貨失敗，請稍後再試');
@@ -356,37 +358,24 @@ const OrderCard: React.FC<{
             }
         } catch (error: any) {
             // Handle errors and set an appropriate error message
-            if (error.response && error.response.data.detail) {
-                setAcceptError(error.response.data.detail);
-            } else {
-                setAcceptError("接單失敗，訂單已被接走");
+            let errorMessage = "接單失敗，訂單已被接走";
+            
+            if (error?.message) {
+                if (error.message.includes('無法接取自己的訂單')) {
+                    errorMessage = '無法接取自己的訂單';
+                } else if (error.message.includes('已被接')) {
+                    errorMessage = '訂單已被其他司機接走';
+                } else if (error.message.includes('訂單未找到')) {
+                    errorMessage = '訂單不存在';
+                } else if (error.response && error.response.data?.detail) {
+                    errorMessage = error.response.data.detail;
+                }
             }
+            
+            setAcceptError(errorMessage);
         }
     };
 
-    /**
-     * Handles the transfer of an order to a new driver.
-     */
-    const handleTransfer = async () => {
-        if (/^\d{7,10}$/.test(newDriverPhone)) {
-            const confirmedFirst = window.confirm("請確認新司機電話號碼無誤，確定要轉單？");
-            if (!confirmedFirst) return;
-      
-            const confirmedSecond = window.confirm("轉單後將無法撤回，確定要轉單？");
-            if (!confirmedSecond) return;
-    
-            try {
-                await onTransfer(order.id?.toString() || "", newDriverPhone);
-                setTransferError("");
-                setShowTransferForm(false);
-            } catch (err: Error | any) {
-                console.error('轉單錯誤，請重新整理頁面讓表單出現：', err);
-                setTransferError(err.message);
-            }
-        } else {
-            setTransferError("電話號碼必須是7到10位的數字");
-        }
-    };
 
 
     const handleDropOrder = async() => {
@@ -534,29 +523,6 @@ const OrderCard: React.FC<{
                 {order.note && (
                     <p className="text-sm text-gray-700 font-bold">備註: {order.note}</p>
                 )}
-                {/* Display previous driver info if the order was transferred */}
-                {/* {order.previous_driver_name && (
-                    <div className="mt-4">
-                        <p className="text-sm text-gray-700 font-bold">🔄轉單自: {order.previous_driver_name} ({order.previous_driver_phone})</p>
-                    </div>
-                )} */}
-                {/* Transfer form for entering new driver's phone number */}
-                {showTransferForm && (
-                    <div className="mt-4">
-                        <p className="text-sm text-gray-700 font-bold">(沒有棄單，只有找到新司機才可以轉單)
-                            請輸入新司機的電話號碼:</p>
-                        <Input
-                            type="text"
-                            value={newDriverPhone}
-                            onChange={(e) => setNewDriverPhone(e.target.value)}
-                            placeholder="7到10位數字"
-                        />
-                        <Button className="mt-2 bg-red-500 text-white" onClick={handleTransfer}>確認轉單</Button>
-                        {transferError && (
-                            <p className="text-red-600 mt-2">{transferError}</p>
-                        )}
-                    </div>
-                )}
                 {acceptError && (
                     <p className="text-red-600 mt-2">{acceptError}</p>
                 )}
@@ -650,17 +616,46 @@ const OrderCard: React.FC<{
                             <div className="text-sm font-medium text-gray-700 mb-2">取貨清單：</div>
                             <ul className="text-xs text-gray-600 space-y-1">
                                 {order.items?.map((item, index) => (
-                                    <li key={index} className="flex justify-between">
-                                        <span>• {item.item_name}</span>
-                                        <span>數量: {item.quantity}</span>
+                                    <li key={index} className="flex justify-between items-start">
+                                        <div className="flex-1">
+                                            <span>• {item.item_name}</span>
+                                            <span className="block text-gray-500 text-xs mt-0.5">
+                                                📍 地點: {item.location || '未指定地點'}
+                                            </span>
+                                        </div>
+                                        <span className="ml-2">數量: {item.quantity}</span>
                                     </li>
                                 ))}
                             </ul>
                         </div>
 
-                        <div className="text-sm text-gray-600 mb-4">
-                            <strong>取貨地點:</strong> {order.location}
-                        </div>
+                        {/* Show unique pickup locations */}
+                        {(() => {
+                            const pickupLocations = new Set<string>();
+                            order.items?.forEach(item => {
+                                if (item.location && item.location.trim() && item.location !== order.location) {
+                                    pickupLocations.add(item.location.trim());
+                                }
+                            });
+                            
+                            if (pickupLocations.size > 0) {
+                                return (
+                                    <div className="text-sm text-gray-600 mb-4">
+                                        <strong>取貨地點:</strong>
+                                        <ul className="list-disc list-inside mt-1 space-y-1">
+                                            {Array.from(pickupLocations).map((location, idx) => (
+                                                <li key={idx} className="text-xs">{location}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                );
+                            }
+                            return (
+                                <div className="text-sm text-gray-600 mb-4">
+                                    <strong>取貨地點:</strong> <span className="text-gray-500">未指定取貨地點</span>
+                                </div>
+                            );
+                        })()}
 
                         <div className="flex space-x-2">
                             <Button 
@@ -685,12 +680,19 @@ const OrderCard: React.FC<{
                     <p className="text-sm text-gray-700 font-bold">訂單狀態: {order.order_status}</p>
                     <p className="text-sm text-gray-700 font-bold">總價格: {order.total_price} 元</p>
                 </div>
-                {/* Action buttons for accepting, transferring, or navigating to the order */}
+                {/* Action buttons for accepting or navigating to the order */}
                 {order.order_status !== '已完成' && (
                     <div className="flex flex-col space-y-2">
                         <div className="flex flex-wrap gap-2">
                             {order.order_status === '未接單' ? (
-                                <Button className="bg-black text-white" onClick={handleAccept}>接單</Button>
+                                <Button 
+                                    className="bg-black text-white" 
+                                    onClick={handleAccept}
+                                    disabled={hasOverdueOrders}
+                                    title={hasOverdueOrders ? "您有逾期訂單，請先完成已接受的訂單" : ""}
+                                >
+                                    接單
+                                </Button>
                             ) : order.order_status === '配送逾時' ? (
                                 <Button 
                                     className="bg-orange-500 text-white" 
@@ -712,12 +714,6 @@ const OrderCard: React.FC<{
                                         onClick={handleStartNavigation}
                                     >
                                         🧭 開始導航
-                                    </Button>
-                                    <Button 
-                                        className="bg-red-500 text-white hover:bg-red-600" 
-                                        onClick={() => setShowTransferForm(true)}
-                                    >
-                                        🔄 轉單
                                     </Button>
                                 </>
                             ) : order.order_status === '配送中' ? (
@@ -745,7 +741,6 @@ const OrderCard: React.FC<{
                             ) : (
                                 // Default actions for other statuses
                                 <>
-                                    <Button className="bg-red-500 text-white" onClick={() => setShowTransferForm(true)}>轉單</Button>
                                     {order.service == 'agricultural_product' &&
                                         <Button className="bg-black text-white" onClick={handleDropOrder}>棄單</Button>}
                                 </>

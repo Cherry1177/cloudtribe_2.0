@@ -172,6 +172,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
       return;
     }
 
+    // Calculate total quantity of products (sum of all item quantities)
+    const totalQuantity = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+    const MAX_PRODUCTS_PER_ORDER = 30;
+    if (totalQuantity > MAX_PRODUCTS_PER_ORDER) {
+      setError(`每筆訂單最多只能訂購 ${MAX_PRODUCTS_PER_ORDER} 個商品。您目前選擇了 ${totalQuantity} 個商品，請減少數量。`);
+      return;
+    }
+
     const user = UserService.getLocalStorageUser();
 
     const orderData = {
@@ -218,7 +226,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
       });
 
       if (!response.ok) {
-        throw new Error('Failed to submit order');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || 'Failed to submit order';
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -231,9 +241,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
         // Redirect to purchased items page with pending tab
         router.push('/consumer/purchased_item?tab=pending');
       }, 2000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting order:', error);
-      setError('提交訂單時出錯');
+      // Show the error message from backend if available, otherwise show generic message
+      const errorMessage = error?.message || '提交訂單時出錯';
+      setError(errorMessage);
     }
   };
 

@@ -363,6 +363,68 @@ async def get_driver_orders(driver_id: int, conn: Connection = Depends(get_db)):
     finally:
         cur.close()
 
+@router.get("/{driver_id}/overdue-orders")
+async def get_overdue_orders(driver_id: int, conn: Connection = Depends(get_db)):
+    """
+    Get overdue orders for a driver (orders accepted more than 2 hours ago and not completed).
+    
+    Args:
+        driver_id (int): The driver's ID.
+        conn (Connection): The database connection.
+    
+    Returns:
+        dict: A dictionary with overdue_count and overdue_orders list.
+    """
+    cur = conn.cursor()
+    try:
+        # Check if driver_id exists
+        cur.execute("SELECT id FROM drivers WHERE id = %s", (driver_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="司機不存在")
+
+        # Get overdue orders (more than 2 hours since acceptance and not completed)
+        cur.execute("""
+            SELECT dro.order_id, dro.service, dro.timestamp,
+                   CASE 
+                     WHEN dro.service = 'necessities' THEN o.order_status
+                     WHEN dro.service = 'agricultural_product' THEN apo.status
+                   END as order_status
+            FROM driver_orders dro
+            LEFT JOIN orders o ON dro.order_id = o.id AND dro.service = 'necessities'
+            LEFT JOIN agricultural_product_order apo ON dro.order_id = apo.id AND dro.service = 'agricultural_product'
+            WHERE dro.driver_id = %s 
+              AND dro.action = '接單'
+              AND dro.timestamp < NOW() - INTERVAL '2 hours'
+              AND (
+                (dro.service = 'necessities' AND o.order_status NOT IN ('已送達', '已完成'))
+                OR (dro.service = 'agricultural_product' AND apo.status NOT IN ('已送達'))
+              )
+            ORDER BY dro.timestamp ASC
+        """, (driver_id,))
+        
+        overdue_orders = cur.fetchall()
+        overdue_list = []
+        for order in overdue_orders:
+            overdue_list.append({
+                "order_id": order[0],
+                "service": order[1],
+                "accepted_at": order[2].isoformat() if order[2] else None,
+                "order_status": order[3]
+            })
+        
+        return {
+            "overdue_count": len(overdue_list),
+            "overdue_orders": overdue_list
+        }
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logging.error("Error fetching overdue orders: %s", str(e))
+        raise HTTPException(status_code=500, detail="伺服器內部錯誤") from e
+    finally:
+        cur.close()
+
 @router.post("/time")
 async def add_driver_time(driver_time: DriverTime, conn: Connection = Depends(get_db)):
     """

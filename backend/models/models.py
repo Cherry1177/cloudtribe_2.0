@@ -98,6 +98,34 @@ class TransferOrderRequest(BaseModel):
     current_driver_id: int
     new_driver_phone: str
 
+class PendingTransfer(BaseModel):
+    """
+    Model representing a pending transfer request.
+    """
+    id: Optional[int] = None
+    order_id: int
+    current_driver_id: int
+    new_driver_id: int
+    current_driver_name: Optional[str] = None
+    current_driver_phone: Optional[str] = None
+    service: str
+    status: str = 'pending'
+    created_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+
+class AcceptTransferRequest(BaseModel):
+    """
+    Model representing an accept transfer request.
+    """
+    transfer_id: int
+    driver_id: int
+
+class CancelOrderRequest(BaseModel):
+    """
+    Model representing a cancel order request.
+    """
+    buyer_id: int
+
 class UploadImageRequset(BaseModel):
     img: str
     

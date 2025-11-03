@@ -6,10 +6,10 @@ import { Order } from '@/interfaces/tribe_resident/buyer/order';
 interface OrderListWithPaginationProps {
     orders: Order[];
     onAccept: (orderId: string, service: string) => Promise<void>;
-    onTransfer: (orderId: string, newDriverPhone: string) => Promise<void>;
     onNavigate: (orderId: string) => void;
     onComplete: (orderId: string, service: string) => Promise<void>;
     driverId: number;
+    hasOverdueOrders?: boolean;
 }
 
 /**
@@ -19,13 +19,12 @@ interface OrderListWithPaginationProps {
  * @param {Object} props - The component props.
  * @param {Array} props.orders - The list of orders to display.
  * @param {Function} props.onAccept - The function to handle accepting an order.
- * @param {Function} props.onTransfer - The function to handle transferring an order.
  * @param {Function} props.onNavigate - The function to handle navigating to an order.
  * @param {Function} props.onComplete - The function to handle completing an order.
  * @param {string} props.driverId - The ID of the driver.
  * @returns {JSX.Element} The rendered component.
  */
-const OrderListWithPagination: React.FC<OrderListWithPaginationProps> = ({ orders, onAccept, onTransfer, onNavigate, onComplete, driverId }) => {
+const OrderListWithPagination: React.FC<OrderListWithPaginationProps> = ({ orders, onAccept, onNavigate, onComplete, driverId, hasOverdueOrders = false }) => {
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 5;
 
@@ -79,8 +78,8 @@ const OrderListWithPagination: React.FC<OrderListWithPaginationProps> = ({ order
                             order={order}
                             driverId={driverId}
                             onAccept={onAccept}
-                            onTransfer={onTransfer}
                             onComplete={onComplete}
+                            hasOverdueOrders={hasOverdueOrders}
                         />
                     );
                 })

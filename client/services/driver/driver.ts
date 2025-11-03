@@ -10,8 +10,13 @@ class DriverService{
             body:JSON.stringify(req)
         })
         const data = await res.json()
-        if(!res.ok)
-          throw new Error(`Error: ${data.detail}`)
+        if(!res.ok) {
+          // Return error message in a format that can be easily handled
+          const error = new Error(data.detail || '接單失敗');
+          // Prevent it from showing as uncaught error in console
+          error.name = 'OrderAcceptError';
+          throw error;
+        }
         return data
     }   
     async get_all_driver_times(){

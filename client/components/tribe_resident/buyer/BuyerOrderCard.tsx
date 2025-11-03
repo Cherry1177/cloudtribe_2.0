@@ -16,11 +16,13 @@ import { getImageSrc, getFallbackImage } from '@/lib/imageUtils';
  */
 const BuyerOrderCard: React.FC<{
   order: Order; // The order object
-}> = ({ order }) => {
+  onCancel?: (orderId: number, service: string) => Promise<void>; // Callback for order cancellation
+}> = ({ order, onCancel }) => {
   const [driverInfo, setDriverInfo] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [currentOrder, setCurrentOrder] = useState(order);
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+  const [isCancelling, setIsCancelling] = useState(false);
   
   // Get image source with error handling
   const getItemImageSrc = (item: any) => {
@@ -83,6 +85,13 @@ const BuyerOrderCard: React.FC<{
           text: '配送逾時',
           description: '配送時間較長，司機正在處理中'
         };
+      case '已取消':
+        return { 
+          color: 'bg-red-600', 
+          icon: '❌', 
+          text: '已取消',
+          description: '此訂單已被取消'
+        };
       default:
         return { 
           color: 'bg-gray-500', 
@@ -128,6 +137,34 @@ const BuyerOrderCard: React.FC<{
       setRefreshing(false);
     }
   };
+
+  // Handle order cancellation
+  const handleCancelOrder = async () => {
+    if (!onCancel) return;
+    
+    const confirmed = window.confirm(
+      currentOrder.order_status === '接單'
+        ? '確定要取消此訂單嗎？司機已經接單，取消後司機將會收到通知。'
+        : '確定要取消此訂單嗎？'
+    );
+    
+    if (!confirmed) return;
+    
+    setIsCancelling(true);
+    try {
+      await onCancel(currentOrder.id || 0, currentOrder.service || 'necessities');
+      // Refresh order after cancellation
+      await refreshOrderStatus();
+    } catch (error) {
+      console.error('Error cancelling order:', error);
+      alert('取消訂單失敗，請稍後再試');
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  // Check if order can be cancelled
+  const canCancel = (currentOrder.order_status === '未接單' || currentOrder.order_status === '接單') && onCancel;
 
   const statusInfo = getStatusInfo(currentOrder.order_status);
 
@@ -277,14 +314,33 @@ const BuyerOrderCard: React.FC<{
 
       {/* Footer section showing total price */}
       <CardFooter className="bg-gray-50 p-4 rounded-b-md">
-        <div className="w-full flex justify-between items-center">
-          <div className="text-lg font-bold text-green-600">
-            總金額: ${currentOrder.total_price}
+        <div className="w-full flex flex-col space-y-2">
+          <div className="flex justify-between items-center">
+            <div className="text-lg font-bold text-green-600">
+              總金額: ${currentOrder.total_price}
+            </div>
+            {currentOrder.order_status === '未接單' && (
+              <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                等待接單中...
+              </Badge>
+            )}
           </div>
-          {currentOrder.order_status === '未接單' && (
-            <Badge variant="outline" className="text-yellow-600 border-yellow-600">
-              等待接單中...
-            </Badge>
+          {/* Cancel button */}
+          {canCancel && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleCancelOrder}
+              disabled={isCancelling}
+              className="w-full"
+            >
+              {isCancelling ? '取消中...' : '❌ 取消訂單'}
+            </Button>
+          )}
+          {currentOrder.order_status === '配送中' && (
+            <p className="text-xs text-gray-500 text-center">
+              司機已取貨，無法取消訂單
+            </p>
           )}
         </div>
       </CardFooter>

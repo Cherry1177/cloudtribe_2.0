@@ -160,6 +160,29 @@ export default function ShoppingCart(){
       setTimeout(() => setMessage('empty'), 3500)
     }
     else{
+      // Validate total quantity - limit to 30 products per order
+      const MAX_PRODUCTS_PER_ORDER = 30;
+      const totalQuantity = check.reduce((sum, checkedItemId) => {
+        const item = cart.find((item) => item.id.toString() == checkedItemId);
+        return sum + (item?.quantity || 0);
+      }, 0);
+      
+      if (totalQuantity > MAX_PRODUCTS_PER_ORDER) {
+        setMessage(`每筆訂單最多只能訂購 ${MAX_PRODUCTS_PER_ORDER} 個商品。您目前選擇了 ${totalQuantity} 個商品，請減少數量。`);
+        setTimeout(() => setMessage('empty'), 3500);
+        return;
+      }
+      
+      // Validate individual item quantities
+      for (const checkedItemId of check) {
+        const item = cart.find((item) => item.id.toString() == checkedItemId);
+        if (item && item.quantity > MAX_PRODUCTS_PER_ORDER) {
+          setMessage(`每筆訂單最多只能訂購 ${MAX_PRODUCTS_PER_ORDER} 個商品。「${item.name}」的數量為 ${item.quantity}，請減少數量。`);
+          setTimeout(() => setMessage('empty'), 3500);
+          return;
+        }
+      }
+      
       storeChangedQuantity()
       check.map(async(checkedItemId)=> {
         let item = cart.find((item) => item.id.toString() == checkedItemId)
@@ -179,8 +202,14 @@ export default function ShoppingCart(){
             const res_cart_status = await ConsumerService.update_shopping_cart_status(item?.id)
           
           }
-          catch(e){
+          catch(e: any){
             console.log(e)
+            // Show error message from backend if available
+            const errorMessage = e?.message || '訂購商品時出錯';
+            // Remove "Error: " prefix if present
+            const cleanMessage = errorMessage.replace(/^Error:\s*/i, '');
+            setMessage(cleanMessage);
+            setTimeout(() => setMessage('empty'), 3500);
           }
         }
       })

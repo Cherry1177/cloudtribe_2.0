@@ -18,7 +18,7 @@ import json
 from backend.handlers.send_message import LineMessageService
 from psycopg2.extensions import connection as Connection
 from fastapi import APIRouter, HTTPException, Depends, Request
-from backend.models.models import Order, DriverOrder, TransferOrderRequest, DetailedOrder
+from backend.models.models import Order, DriverOrder, TransferOrderRequest, DetailedOrder, PendingTransfer, AcceptTransferRequest, CancelOrderRequest
 from backend.database import get_db_connection
 import os
 
@@ -73,12 +73,27 @@ async def create_order(order: DetailedOrder, conn: Connection = Depends(get_db),
     logging.info("Order data received: %s", order.model_dump_json())
     cur = conn.cursor()
     try:
+        # Validate total quantity of products (sum of all item quantities)
+        MAX_PRODUCTS_PER_ORDER = 30
+        total_quantity = sum(item.quantity for item in order.items)
+        if total_quantity > MAX_PRODUCTS_PER_ORDER:
+            log_event("ORDER_CREATION_FAILED", {
+                "buyer_id": order.buyer_id,
+                "total_quantity": total_quantity,
+                "max_allowed": MAX_PRODUCTS_PER_ORDER,
+                "reason": "Exceeds maximum products per order"
+            })
+            raise HTTPException(
+                status_code=400, 
+                detail=f"每筆訂單最多只能訂購 {MAX_PRODUCTS_PER_ORDER} 個商品。您目前訂購了 {total_quantity} 個商品，請減少數量。"
+            )
         
         log_event("ORDER_CREATION_STARTED", {
             "buyer_id": order.buyer_id,
             "total_price": order.total_price,
             "is_urgent": order.is_urgent,
             "items_count": len(order.items),
+            "total_quantity": total_quantity,
             "endpoint": str(request.url) if request else "N/A",
             "client_ip": request.client.host if request else "N/A"
         })
@@ -615,6 +630,33 @@ async def accept_order(service: str, order_id: int, driver_order: DriverOrder, c
             "client_ip": request.client.host if request else "N/A"
         })
 
+        # Get driver's user_id to check if driver is the same person who placed the order
+        cur.execute("SELECT user_id FROM drivers WHERE id = %s", (driver_order.driver_id,))
+        driver_user_result = cur.fetchone()
+        if not driver_user_result:
+            raise HTTPException(status_code=404, detail="司機不存在")
+        driver_user_id = driver_user_result[0]
+
+        # Check if driver has overdue orders (more than 2 hours since acceptance and not completed)
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM driver_orders dro
+            LEFT JOIN orders o ON dro.order_id = o.id AND dro.service = 'necessities'
+            LEFT JOIN agricultural_product_order apo ON dro.order_id = apo.id AND dro.service = 'agricultural_product'
+            WHERE dro.driver_id = %s 
+              AND dro.action = '接單'
+              AND dro.timestamp < NOW() - INTERVAL '2 hours'
+              AND (
+                (dro.service = 'necessities' AND o.order_status NOT IN ('已送達', '已完成'))
+                OR (dro.service = 'agricultural_product' AND apo.status NOT IN ('已送達'))
+              )
+        """, (driver_order.driver_id,))
+        overdue_count = cur.fetchone()[0]
+        if overdue_count > 0:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"您有 {overdue_count} 筆訂單超過 2 小時未完成配送，請先完成已接受的訂單後再接受新訂單"
+            )
 
         if service == 'necessities':
             # Get order details with items
@@ -641,6 +683,10 @@ async def accept_order(service: str, order_id: int, driver_order: DriverOrder, c
 
             # Format message with order details
             buyer_id = order[1]  # buyer_id index
+            
+            # Check if driver is trying to accept their own order
+            if driver_user_id == buyer_id:
+                raise HTTPException(status_code=400, detail="無法接取自己的訂單")
             total_price = float(order[6])  # total_price index
             delivery_address = order[4]  # location index
             driver_phone = order[-1] if order[-1] else "無"
@@ -695,6 +741,10 @@ async def accept_order(service: str, order_id: int, driver_order: DriverOrder, c
 
             # Format message with order details
             buyer_id = order[1]
+            
+            # Check if driver is trying to accept their own order
+            if driver_user_id == buyer_id:
+                raise HTTPException(status_code=400, detail="無法接取自己的訂單")
             price = float(order[9])  # price from agricultural_produce
             quantity = int(order[10])  # quantity from order
             total_price = price * quantity
@@ -821,39 +871,54 @@ async def transfer_order(order_id: int, transfer_request: TransferOrderRequest, 
         if new_driver_id == transfer_request.current_driver_id:
             raise HTTPException(status_code=400, detail="不能將訂單轉給自己")
 
-        if new_driver:
-            # Send notification to new driver
-            notification_message = (
-                f"您有一筆新的轉單訂單 (訂單編號: {order_id})\n"
-                f"轉單來自司機: {current_driver_name}\n"
-                f"聯絡電話: {current_driver_phone}"
-            )
-            
-            success = await line_service.send_message_to_user(
-                new_driver[1],  # new_driver[1]=user_id
-                notification_message
-            )
-            if not success:
-                logger.warning(f"司機 (ID: {new_driver[1]}) 未綁定 LINE 帳號或發送通知失敗")
-
-        # Ensure current driver is assigned to the order
-        cur.execute("SELECT driver_id FROM driver_orders WHERE order_id = %s AND action = '接單' FOR UPDATE", (order_id,))
-        order = cur.fetchone()
-        if not order or order[0] != transfer_request.current_driver_id:
+        # Ensure current driver is assigned to the order and get service type
+        cur.execute("SELECT driver_id, service FROM driver_orders WHERE order_id = %s AND action = '接單' FOR UPDATE", (order_id,))
+        order_record = cur.fetchone()
+        if not order_record or order_record[0] != transfer_request.current_driver_id:
             raise HTTPException(status_code=400, detail="當前司機無法轉交此訂單")
-
-        # Get current driver details again for logging
-        cur.execute("SELECT driver_name, driver_phone FROM drivers WHERE id = %s", (transfer_request.current_driver_id,))
-        current_driver = cur.fetchone()
         
-        # Update driver_orders with new driver details
+        service_type = order_record[1] if order_record[1] else 'necessities'  # Default to necessities if not specified
+
+        # Check if there's already a pending transfer for this order and new driver
         cur.execute(
-            "UPDATE driver_orders SET driver_id = %s, previous_driver_id = %s, previous_driver_name = %s, "
-            "previous_driver_phone = %s WHERE order_id = %s AND driver_id = %s AND action = '接單'", 
-            (new_driver_id, transfer_request.current_driver_id, current_driver[0], current_driver[1], order_id, transfer_request.current_driver_id)
+            "SELECT id FROM pending_transfers WHERE order_id = %s AND new_driver_id = %s AND status = 'pending'",
+            (order_id, new_driver_id)
         )
+        existing_pending = cur.fetchone()
+        if existing_pending:
+            raise HTTPException(status_code=400, detail="該轉單請求已存在，請等待新司機回應")
+
+        # Create pending transfer instead of immediately transferring
+        cur.execute(
+            """INSERT INTO pending_transfers 
+            (order_id, current_driver_id, new_driver_id, current_driver_name, current_driver_phone, service, status, expires_at)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending', CURRENT_TIMESTAMP + INTERVAL '24 hours')
+            RETURNING id""",
+            (order_id, transfer_request.current_driver_id, new_driver_id, current_driver_name, current_driver_phone, service_type)
+        )
+        pending_transfer_id = cur.fetchone()[0]
+
+        # Send notification to new driver about pending transfer
+        notification_message = (
+            f"您有一筆新的轉單請求待確認 (訂單編號: {order_id})\n"
+            f"轉單來自司機: {current_driver_name}\n"
+            f"聯絡電話: {current_driver_phone}\n"
+            f"請至司機專區查看並決定是否接受此轉單"
+        )
+        
+        success = await line_service.send_message_to_user(
+            new_driver[1],  # new_driver[1]=user_id
+            notification_message
+        )
+        if not success:
+            logging.warning(f"司機 (ID: {new_driver[1]}) 未綁定 LINE 帳號或發送通知失敗")
+
         conn.commit()
-        return {"status": "success", "message": "訂單已成功轉移給新司機"}
+        return {
+            "status": "pending", 
+            "message": "轉單請求已送出，等待新司機確認",
+            "pending_transfer_id": pending_transfer_id
+        }
     except HTTPException as e:
         conn.rollback()
         if e.status_code == 400:
@@ -882,6 +947,181 @@ async def transfer_order(order_id: int, transfer_request: TransferOrderRequest, 
             "error": str(e)
         })
         raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        cur.close()
+
+@router.get("/pending-transfers/{driver_id}")
+async def get_pending_transfers(driver_id: int, conn: Connection = Depends(get_db)):
+    """
+    Get all pending transfer requests for a driver.
+    Args:
+        driver_id: The ID of the driver to get pending transfers for.
+        conn: The database connection.
+    Returns:
+        List of pending transfer requests.
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT pt.id, pt.order_id, pt.current_driver_id, pt.current_driver_name, 
+                   pt.current_driver_phone, pt.service, pt.status, pt.created_at, pt.expires_at
+            FROM pending_transfers pt
+            WHERE pt.new_driver_id = %s AND pt.status = 'pending' 
+            AND pt.expires_at > CURRENT_TIMESTAMP
+            ORDER BY pt.created_at DESC
+        """, (driver_id,))
+        
+        pending_transfers = cur.fetchall()
+        result = []
+        for pt in pending_transfers:
+            result.append({
+                "id": pt[0],
+                "order_id": pt[1],
+                "current_driver_id": pt[2],
+                "current_driver_name": pt[3],
+                "current_driver_phone": pt[4],
+                "service": pt[5],
+                "status": pt[6],
+                "created_at": pt[7].isoformat() if pt[7] else None,
+                "expires_at": pt[8].isoformat() if pt[8] else None
+            })
+        return result
+    except Exception as e:
+        logging.error("Error fetching pending transfers: %s", str(e))
+        raise HTTPException(status_code=500, detail="獲取待處理轉單失敗") from e
+    finally:
+        cur.close()
+
+@router.post("/pending-transfers/{transfer_id}/accept")
+async def accept_pending_transfer(transfer_id: int, accept_request: AcceptTransferRequest, conn: Connection = Depends(get_db)):
+    """
+    Accept a pending transfer request.
+    Args:
+        transfer_id: The ID of the pending transfer.
+        accept_request: The accept request containing driver_id.
+        conn: The database connection.
+    Returns:
+        Success message.
+    """
+    cur = conn.cursor()
+    try:
+        # Get pending transfer details
+        cur.execute("""
+            SELECT pt.order_id, pt.current_driver_id, pt.new_driver_id, pt.current_driver_name, 
+                   pt.current_driver_phone, pt.service, pt.status
+            FROM pending_transfers pt
+            WHERE pt.id = %s AND pt.status = 'pending' AND pt.expires_at > CURRENT_TIMESTAMP
+        """, (transfer_id,))
+        
+        pending_transfer = cur.fetchone()
+        if not pending_transfer:
+            raise HTTPException(status_code=404, detail="轉單請求不存在或已過期")
+        
+        order_id = pending_transfer[0]
+        current_driver_id = pending_transfer[1]
+        new_driver_id = pending_transfer[2]
+        current_driver_name = pending_transfer[3]
+        current_driver_phone = pending_transfer[4]
+        service_type = pending_transfer[5]
+        
+        # Verify the driver accepting is the new driver
+        if new_driver_id != accept_request.driver_id:
+            raise HTTPException(status_code=403, detail="無權限接受此轉單請求")
+        
+        # Verify current driver still owns the order
+        cur.execute("SELECT driver_id FROM driver_orders WHERE order_id = %s AND action = '接單' FOR UPDATE", (order_id,))
+        order_record = cur.fetchone()
+        if not order_record or order_record[0] != current_driver_id:
+            # Update pending transfer status to expired
+            cur.execute("UPDATE pending_transfers SET status = 'expired' WHERE id = %s", (transfer_id,))
+            conn.commit()
+            raise HTTPException(status_code=400, detail="原始司機已不再擁有此訂單，轉單請求已失效")
+        
+        # Update driver_orders with new driver details
+        cur.execute(
+            "UPDATE driver_orders SET driver_id = %s, previous_driver_id = %s, previous_driver_name = %s, "
+            "previous_driver_phone = %s WHERE order_id = %s AND driver_id = %s AND action = '接單'", 
+            (new_driver_id, current_driver_id, current_driver_name, current_driver_phone, order_id, current_driver_id)
+        )
+        
+        # Update pending_transfers status to accepted
+        cur.execute("UPDATE pending_transfers SET status = 'accepted' WHERE id = %s", (transfer_id,))
+        
+        # Mark any other pending transfers for this order as expired
+        cur.execute(
+            "UPDATE pending_transfers SET status = 'expired' WHERE order_id = %s AND id != %s AND status = 'pending'",
+            (order_id, transfer_id)
+        )
+        
+        conn.commit()
+        
+        log_event("ORDER_TRANSFER_ACCEPTED", {
+            "transfer_id": transfer_id,
+            "order_id": order_id,
+            "current_driver_id": current_driver_id,
+            "new_driver_id": new_driver_id
+        })
+        
+        return {"status": "success", "message": "轉單已成功接受，訂單已轉移給您"}
+        
+    except HTTPException as e:
+        conn.rollback()
+        raise e
+    except Exception as e:
+        conn.rollback()
+        logging.error("Error accepting pending transfer: %s", str(e))
+        raise HTTPException(status_code=500, detail="接受轉單失敗") from e
+    finally:
+        cur.close()
+
+@router.post("/pending-transfers/{transfer_id}/reject")
+async def reject_pending_transfer(transfer_id: int, reject_request: AcceptTransferRequest, conn: Connection = Depends(get_db)):
+    """
+    Reject a pending transfer request.
+    Args:
+        transfer_id: The ID of the pending transfer.
+        reject_request: The reject request containing driver_id.
+        conn: The database connection.
+    Returns:
+        Success message.
+    """
+    cur = conn.cursor()
+    try:
+        # Get pending transfer details
+        cur.execute("""
+            SELECT pt.new_driver_id, pt.status
+            FROM pending_transfers pt
+            WHERE pt.id = %s AND pt.status = 'pending'
+        """, (transfer_id,))
+        
+        pending_transfer = cur.fetchone()
+        if not pending_transfer:
+            raise HTTPException(status_code=404, detail="轉單請求不存在")
+        
+        new_driver_id = pending_transfer[0]
+        
+        # Verify the driver rejecting is the new driver
+        if new_driver_id != reject_request.driver_id:
+            raise HTTPException(status_code=403, detail="無權限拒絕此轉單請求")
+        
+        # Update pending_transfers status to rejected
+        cur.execute("UPDATE pending_transfers SET status = 'rejected' WHERE id = %s", (transfer_id,))
+        conn.commit()
+        
+        log_event("ORDER_TRANSFER_REJECTED", {
+            "transfer_id": transfer_id,
+            "driver_id": new_driver_id
+        })
+        
+        return {"status": "success", "message": "轉單請求已拒絕"}
+        
+    except HTTPException as e:
+        conn.rollback()
+        raise e
+    except Exception as e:
+        conn.rollback()
+        logging.error("Error rejecting pending transfer: %s", str(e))
+        raise HTTPException(status_code=500, detail="拒絕轉單失敗") from e
     finally:
         cur.close()
 
@@ -1094,6 +1334,182 @@ async def get_order_driver_info(order_id: int, conn: Connection = Depends(get_db
     except Exception as e:
         logging.error("Error fetching driver info: %s", str(e))
         raise HTTPException(status_code=500, detail="獲取司機資訊失敗") from e
+    finally:
+        cur.close()
+
+@router.post("/{service}/{order_id}/cancel")
+async def cancel_order(service: str, order_id: int, request: CancelOrderRequest, conn: Connection = Depends(get_db)):
+    """
+    Cancel an order. Buyer can only cancel if order status is '未接單' or '接單' (before driver picks up).
+    
+    Args:
+        service (str): The service type ('necessities' or 'agricultural_product').
+        order_id (int): The ID of the order to cancel.
+        request (CancelOrderRequest): The cancellation request containing buyer_id.
+        conn (Connection): The database connection.
+    
+    Returns:
+        dict: Success message.
+    """
+    cur = conn.cursor()
+    try:
+        buyer_id = request.buyer_id
+        
+        if service == 'necessities':
+            # Get order details and verify buyer
+            cur.execute("""
+                SELECT id, buyer_id, order_status
+                FROM orders
+                WHERE id = %s
+                FOR UPDATE
+            """, (order_id,))
+            
+            order = cur.fetchone()
+            if not order:
+                raise HTTPException(status_code=404, detail="訂單不存在")
+            
+            # Verify buyer owns the order
+            if order[1] != buyer_id:
+                raise HTTPException(status_code=403, detail="無權限取消此訂單")
+            
+            # Check if order can be cancelled (only if status is '未接單' or '接單')
+            if order[2] not in ['未接單', '接單']:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"訂單狀態為 '{order[2]}'，無法取消。只有未接單或已接單的訂單可以取消。"
+                )
+            
+            # Check if driver has already accepted the order
+            cur.execute("""
+                SELECT driver_id, d.driver_name, d.driver_phone, d.user_id
+                FROM driver_orders dro
+                JOIN drivers d ON dro.driver_id = d.id
+                WHERE dro.order_id = %s AND dro.action = '接單'
+            """, (order_id,))
+            
+            driver_info = cur.fetchone()
+            
+            # Update order status to cancelled
+            cur.execute("""
+                UPDATE orders
+                SET order_status = '已取消'
+                WHERE id = %s
+            """, (order_id,))
+            
+            # Delete driver_orders record if exists
+            if driver_info:
+                cur.execute("""
+                    DELETE FROM driver_orders
+                    WHERE order_id = %s AND action = '接單'
+                """, (order_id,))
+            
+            conn.commit()
+            
+            # Send notification to driver if order was already accepted
+            if driver_info:
+                driver_user_id = driver_info[3]
+                message = (
+                    f"⚠️ 訂單 #{order_id} 已被買家取消\n"
+                    f"買家已取消此訂單，無需再配送。"
+                )
+                success = await line_service.send_message_to_user(driver_user_id, message)
+                if not success:
+                    logging.warning(f"司機 (ID: {driver_user_id}) 未綁定 LINE 帳號或發送通知失敗")
+            
+            log_event("ORDER_CANCELLED", {
+                "order_id": order_id,
+                "buyer_id": buyer_id,
+                "service": service,
+                "had_driver": driver_info is not None
+            })
+            
+            return {
+                "status": "success",
+                "message": "訂單已成功取消"
+            }
+            
+        elif service == 'agricultural_product':
+            # Get order details and verify buyer
+            cur.execute("""
+                SELECT id, buyer_id, status
+                FROM agricultural_product_order
+                WHERE id = %s
+                FOR UPDATE
+            """, (order_id,))
+            
+            order = cur.fetchone()
+            if not order:
+                raise HTTPException(status_code=404, detail="訂單不存在")
+            
+            # Verify buyer owns the order
+            if order[1] != buyer_id:
+                raise HTTPException(status_code=403, detail="無權限取消此訂單")
+            
+            # Check if order can be cancelled (only if status is '未接單' or '接單')
+            if order[2] not in ['未接單', '接單']:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"訂單狀態為 '{order[2]}'，無法取消。只有未接單或已接單的訂單可以取消。"
+                )
+            
+            # Check if driver has already accepted the order
+            cur.execute("""
+                SELECT driver_id, d.driver_name, d.driver_phone, d.user_id
+                FROM driver_orders dro
+                JOIN drivers d ON dro.driver_id = d.id
+                WHERE dro.order_id = %s AND dro.action = '接單'
+            """, (order_id,))
+            
+            driver_info = cur.fetchone()
+            
+            # Update order status to cancelled
+            cur.execute("""
+                UPDATE agricultural_product_order
+                SET status = '已取消'
+                WHERE id = %s
+            """, (order_id,))
+            
+            # Delete driver_orders record if exists
+            if driver_info:
+                cur.execute("""
+                    DELETE FROM driver_orders
+                    WHERE order_id = %s AND action = '接單'
+                """, (order_id,))
+            
+            conn.commit()
+            
+            # Send notification to driver if order was already accepted
+            if driver_info:
+                driver_user_id = driver_info[3]
+                message = (
+                    f"⚠️ 訂單 #{order_id} 已被買家取消\n"
+                    f"買家已取消此訂單，無需再配送。"
+                )
+                success = await line_service.send_message_to_user(driver_user_id, message)
+                if not success:
+                    logging.warning(f"司機 (ID: {driver_user_id}) 未綁定 LINE 帳號或發送通知失敗")
+            
+            log_event("ORDER_CANCELLED", {
+                "order_id": order_id,
+                "buyer_id": buyer_id,
+                "service": service,
+                "had_driver": driver_info is not None
+            })
+            
+            return {
+                "status": "success",
+                "message": "訂單已成功取消"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="不支援的服務類型")
+            
+    except HTTPException as he:
+        conn.rollback()
+        raise he
+    except Exception as e:
+        conn.rollback()
+        logging.error("Error cancelling order: %s", str(e))
+        raise HTTPException(status_code=500, detail="取消訂單失敗") from e
     finally:
         cur.close()
 

@@ -87,6 +87,40 @@ export default function Page(){
     }
   };
 
+  // Handle order cancellation
+  const handleCancelOrder = async (orderId: number, service: string) => {
+    if (!user || !user.id) {
+      alert('無法取消訂單：使用者資訊不存在');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/orders/${service}/${orderId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ buyer_id: user.id }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || '取消訂單失敗');
+      }
+
+      const result = await response.json();
+      alert(result.message || '訂單已成功取消');
+      
+      // Refresh orders after cancellation
+      await fetchBuyerOrders(user.id);
+    } catch (error) {
+      console.error('Error cancelling order:', error);
+      const errorMessage = error instanceof Error ? error.message : '取消訂單失敗，請稍後再試';
+      alert(errorMessage);
+      throw error; // Re-throw to let BuyerOrderCard handle it
+    }
+  };
+
   // Filter orders by status for tabs
   const getOrdersByStatus = (status: string) => {
     if (status === 'all') return orders;
@@ -163,7 +197,11 @@ export default function Page(){
                   {orders.length > 0 ? (
                     <div className="grid gap-6">
                       {orders.map((order) => (
-                        <BuyerOrderCard key={`${order.service}-${order.id}`} order={order} />
+                        <BuyerOrderCard 
+                          key={`${order.service}-${order.id}`} 
+                          order={order} 
+                          onCancel={handleCancelOrder}
+                        />
                       ))}
                     </div>
                   ) : (
@@ -180,7 +218,11 @@ export default function Page(){
                     {getOrdersByStatus(status).length > 0 ? (
                       <div className="grid gap-6">
                         {getOrdersByStatus(status).map((order) => (
-                          <BuyerOrderCard key={`${order.service}-${order.id}`} order={order} />
+                          <BuyerOrderCard 
+                            key={`${order.service}-${order.id}`} 
+                            order={order} 
+                            onCancel={handleCancelOrder}
+                          />
                         ))}
                       </div>
                     ) : (

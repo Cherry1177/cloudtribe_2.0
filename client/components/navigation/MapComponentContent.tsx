@@ -30,7 +30,6 @@ import {
   faWalking,   
   faBicycle,  
   faCar,
-  faThumbsUp, 
 } from "@fortawesome/free-solid-svg-icons";
 import {
   GoogleMap,
@@ -47,6 +46,7 @@ import { Order } from "@/interfaces/tribe_resident/buyer/order";
 import DriverService  from '@/services/driver/driver';
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import MapContent from "@/components/navigation/MapContent";
+import { getStoreCoordinates, isKnownStore } from "@/config/stores";
 
 
 // Define libraries for Google Maps
@@ -73,7 +73,18 @@ const getDistanceInMeters = (loc1: LatLng, loc2: LatLng): number => {
 };
 
 // Function to fetch coordinates based on place name
+// Uses hardcoded coordinates for known stores, falls back to geocoding for others
 const fetchCoordinates = async (placeName: string) => {
+  // Check if it's one of our known stores with hardcoded GPS coordinates
+  if (isKnownStore(placeName)) {
+    const coords = getStoreCoordinates(placeName);
+    if (coords) {
+      console.log(`✅ Using hardcoded GPS for store: ${placeName}`, coords);
+      return { lat: coords.lat, lng: coords.lng };
+    }
+  }
+  
+  // Fallback to geocoding for unknown locations
   try {
     const response = await fetch(
       `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
@@ -215,6 +226,9 @@ const MapComponentContent: React.FC = () => {
 
   // Ref for throttling updates
   const isThrottledRef = useRef(false);
+
+  // Ref to track if pickup points have been auto-populated
+  const pickupPointsPopulatedRef = useRef<number | null>(null);
 
   // State to trigger force update
   const [forceUpdateTrigger, setForceUpdateTrigger] = useState<number>(0);
@@ -375,12 +389,18 @@ const MapComponentContent: React.FC = () => {
   }, []);
 
  
-  // Fetch driver data
+  // Fetch driver data and auto-show driver orders if only driverId is provided
   useEffect(() => {
     if (driverIdParam) {
       fetchDriverData(driverIdParam);
+      // If only driverId is provided (no orderId or destination), show driver orders page
+      if (!orderIdParam && !destinationParam && !finalDestinationParam) {
+        setShowDriverOrders(true);
+        setIsSheetOpen(true); // Automatically open the sheet to show driver orders
+        setError(null); // Clear any errors since we're showing orders instead
+      }
     }
-  }, [driverIdParam]);
+  }, [driverIdParam, orderIdParam, destinationParam, finalDestinationParam]);
 
   // Fetch specific order data when orderId is provided
   useEffect(() => {
@@ -391,6 +411,8 @@ const MapComponentContent: React.FC = () => {
           if (response.ok) {
             const order: Order = await response.json();
             setOrderData(order);
+            // Reset pickup points populated ref when order changes
+            pickupPointsPopulatedRef.current = null;
             console.log('Loaded order data for navigation:', order);
           } else {
             console.error('Failed to fetch order data');
@@ -429,6 +451,25 @@ const MapComponentContent: React.FC = () => {
       
       if (destinationAddress && isLoaded && window.google && window.google.maps && window.google.maps.Geocoder) {
         console.log('Setting up destination:', destinationAddress);
+        
+        // Check if it's one of our known stores with hardcoded GPS coordinates
+        if (isKnownStore(destinationAddress)) {
+          const coords = getStoreCoordinates(destinationAddress);
+          if (coords) {
+            const destination = {
+              name: destinationAddress,
+              location: { lat: coords.lat, lng: coords.lng }
+            };
+            setDestinations([destination]);
+            console.log('✅ Using hardcoded GPS for destination store:', destination);
+            
+            // Show success message to driver
+            if (orderData) {
+              console.log(`🧭 Navigation ready for Order #${orderData.id} to ${destinationAddress}`);
+            }
+            return;
+          }
+        }
         
         try {
           const geocoder = new window.google.maps.Geocoder();
@@ -480,6 +521,121 @@ const MapComponentContent: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [destinationParam, orderData, isLoaded]);
+
+  // Auto-populate pickup points from order data
+  useEffect(() => {
+    const populatePickupPoints = async () => {
+      // Only populate if we have order data, Google Maps is loaded, and destination is already set
+      if (!orderData || !orderData.items || !isLoaded || destinations.length === 0) {
+        return;
+      }
+
+      // Don't re-populate if we already populated for this order (to avoid duplicates)
+      if (pickupPointsPopulatedRef.current === orderData.id) {
+        console.log('Pickup points already populated for this order, skipping');
+        return;
+      }
+
+      // Only populate if we have just the destination (length === 1) or if we haven't populated for this order yet
+      // If destinations.length > 1, it means waypoints were added from other sources, so skip
+      if (destinations.length > 1) {
+        console.log('Waypoints already exist (possibly from other sources), skipping auto-population');
+        return;
+      }
+
+      // Extract unique pickup locations from order items
+      const pickupLocations = new Set<string>();
+      console.log('📦 Order items for pickup point extraction:', orderData.items);
+      
+      orderData.items.forEach((item, index) => {
+        console.log(`Item ${index}:`, { item_name: item.item_name, location: item.location });
+        if (item.location && item.location.trim() && item.location.trim() !== 'undefined') {
+          pickupLocations.add(item.location.trim());
+        }
+      });
+      
+      console.log('📍 Extracted pickup locations:', Array.from(pickupLocations));
+
+      // Remove destination location from pickup points to avoid duplicate
+      const destinationAddress = destinationParam || orderData.location;
+      pickupLocations.delete(destinationAddress?.trim() || '');
+
+      if (pickupLocations.size === 0) {
+        console.log('No pickup points found in order items');
+        return;
+      }
+
+      console.log('🔄 Auto-populating pickup points from order:', Array.from(pickupLocations));
+
+      try {
+        const geocoder = new window.google.maps.Geocoder();
+        const pickupPoints: { name: string; location: LatLng }[] = [];
+        const finalDestination = destinations[destinations.length - 1]; // Keep the final destination
+
+        // Geocode all pickup locations (use hardcoded coordinates for known stores)
+        const geocodePromises = Array.from(pickupLocations).map(location => {
+          return new Promise<{ name: string; location: LatLng } | null>((resolve) => {
+            // Check if it's one of our known stores with hardcoded GPS coordinates
+            if (isKnownStore(location)) {
+              const coords = getStoreCoordinates(location);
+              if (coords) {
+                console.log(`✅ Using hardcoded GPS for store: ${location}`, coords);
+                resolve({
+                  name: location,
+                  location: { lat: coords.lat, lng: coords.lng }
+                });
+                return;
+              }
+            }
+            
+            // Fallback to geocoding for unknown locations
+            geocoder.geocode(
+              {
+                address: location,
+                componentRestrictions: { country: 'TW' }
+              },
+              (results, status) => {
+                if (status === 'OK' && results && results[0]) {
+                  const loc = results[0].geometry.location;
+                  resolve({
+                    name: location,
+                    location: { lat: loc.lat(), lng: loc.lng() }
+                  });
+                } else {
+                  console.warn(`⚠️ Failed to geocode pickup point: ${location}`, status);
+                  resolve(null);
+                }
+              }
+            );
+          });
+        });
+
+        const geocodedResults = await Promise.all(geocodePromises);
+        const validPickupPoints = geocodedResults.filter(
+          (point): point is { name: string; location: LatLng } => point !== null
+        );
+
+        if (validPickupPoints.length > 0) {
+          // Set destinations: pickup points first, then final destination
+          setDestinations([...validPickupPoints, finalDestination]);
+          // Mark that we've populated pickup points for this order
+          pickupPointsPopulatedRef.current = orderData.id || null;
+          console.log(`✅ Auto-populated ${validPickupPoints.length} pickup points:`, validPickupPoints);
+        } else {
+          // Even if no pickup points found, mark as populated to avoid retrying
+          pickupPointsPopulatedRef.current = orderData.id || null;
+        }
+      } catch (error) {
+        console.error('❌ Error populating pickup points:', error);
+      }
+    };
+
+    // Only run if we have order data and destination is set
+    if (orderData && orderData.items && isLoaded && destinations.length >= 1) {
+      populatePickupPoints();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderData?.id, orderData?.items, isLoaded, destinations.length]);
 
   useEffect(() => {
     if (driverData?.id) {
@@ -578,10 +734,20 @@ const MapComponentContent: React.FC = () => {
       return;
     }
 
+    // Only show error if no destinations and we're not in driver orders mode
     if (destinations.length === 0) {
+      // If only driverId is provided, show driver orders instead of error
+      if (driverIdParam && !orderIdParam && !destinationParam && !finalDestinationParam) {
+        setShowDriverOrders(true);
+        setError(null);
+        return;
+      }
       setError("請至少增加一個目的地");
       return;
     }
+    
+    // Clear any previous errors
+    setError(null);
 
     const originStr = `${currentLocation.lat},${currentLocation.lng}`;
     const finalDestination = destinations[destinations.length - 1].location;
@@ -778,46 +944,9 @@ const MapComponentContent: React.FC = () => {
 };
 
 /**
- * Handle transferring an order.
- * @param orderId - The ID of the order to transfer.
- * @param newDriverPhone - The phone number of the new driver.
- */
-const handleTransferOrder = async (orderId: string, newDriverPhone: string) => {
-    try {
-        const response = await fetch(`/api/orders/${orderId}/transfer`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ current_driver_id: driverData?.id, new_driver_phone: newDriverPhone }),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to transfer order: ${errorText}`);
-        }
-
-        if (orderData && orderData.id === parseInt(orderId)) {
-          setOrderData(null);
-        }
-
-        alert('轉單成功，已交給目標的司機');
-        await fetchDriverOrders();
-
-    } catch (error) {
-        console.error('Error transferring order:', error);
-        alert('轉單失敗，填寫電話號碼的司機未註冊，請重新整理頁面讓表單重新出現');
-    }
-};
-
-/**
- * Handle navigating to order details.
- * @param orderId - The ID of the order to navigate to.
- * @param driverId - The driver's ID.
- */
-/**
  * Handle completing an order.
  * @param orderId - The ID of the order to complete.
+ * @param service - The service type of the order.
  */
 const handleCompleteOrder = async (orderId: string, service: string) => {
     try {
@@ -845,17 +974,6 @@ const handleCompleteOrder = async (orderId: string, service: string) => {
 };
 
 
-/**
- * Function to recommend route by optimizing waypoints
- */
-const handleRecommendRoute = () => {
-  if (destinations.length <= 2) {
-    setError("至少需要兩個目的地才能推薦路徑。");
-    return;
-  }
-  setOptimizeWaypoints(true);
-  triggerForceUpdate(); 
-};
 
 /**
  * Callback to handle optimized waypoint order
@@ -1387,22 +1505,22 @@ return (
             </Button>
           </div>
 
-          {/* Recommend Route Button */}
-          <Button
-            onClick={handleRecommendRoute}
-            className="mb-10 flex justify-center space-x-4 bg-black text-white max-w-xs w-1/2 mx-auto block"
-          >
-            <FontAwesomeIcon icon={faThumbsUp} className="mr-2" />
-            推薦路徑
-          </Button>
-          
-          {/* Generate Navigation Link Button */}
-          <Button
-            onClick={handleGenerateNavigationLinkFromCurrentLocation}
-            className="my-5 bg-black text-white max-w-xs w-1/2 mx-auto block"
-          >
-            導航連結更好的體驗
-          </Button>
+          {/* Generate Navigation Link Button - Prominent GPS Navigation Button */}
+          <div className="mb-6 flex justify-center">
+            <Button
+              onClick={handleGenerateNavigationLinkFromCurrentLocation}
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-2xl transform hover:scale-105 transition-all duration-300 w-full max-w-md flex items-center justify-center space-x-3"
+              size="lg"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              <span>開啟 GPS 導航</span>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Button>
+          </div>
 
           {/* Total Distance and Time */}
           {totalDistance && totalTime && (
@@ -1416,8 +1534,10 @@ return (
             </Card>
           )}
           
-          {/* Error Alert */}
-          {error && (
+          {/* Error Alert - Only show if we have an order/destination context, not when only driverId is provided */}
+          {error && 
+           (orderIdParam || destinationParam || finalDestinationParam || destinations.length > 0) && 
+           !(driverIdParam && !orderIdParam && !destinationParam && !finalDestinationParam && destinations.length === 0) && (
             <Alert variant="destructive">
               <AlertTitle>錯誤</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
@@ -1522,37 +1642,6 @@ return (
             </ul>
           </div>
 
-          {/* Add New Destination */}
-          <div className="flex items-center space-x-2 justify-center">
-            <div className="relative w-full">
-              <Input
-                type="text"
-                value={searchInput}
-                onChange={handleInputChange}
-                placeholder="搜尋地點"
-                className="w-full"
-              />
-              {predictions.length > 0 && (
-                <div className="absolute z-50 w-full bg-white mt-1 rounded-md shadow-lg max-h-60 overflow-auto">
-                  {predictions.map((prediction) => {
-                    const { businessName, address } = formatPredictionDisplay(prediction);
-                    return (
-                      <div
-                        key={prediction.place_id}
-                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
-                        onClick={() => handlePlaceSelect(prediction.place_id)}
-                      >
-                        <div className="font-medium text-gray-900">{businessName}</div>
-                        <div className="text-sm text-gray-500">{address}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            <Button onClick={handleAddDestination}>新增</Button>
-          </div>
-
           {/* Show the terminal */}
           {destinations.length > 0 && (
             <div className="my-5">
@@ -1590,7 +1679,6 @@ return (
               <NavigationDriverOrdersPage
                 driverData={driverData}
                 onAccept={handleAcceptOrder}
-                onTransfer={handleTransferOrder} 
                 onComplete={handleCompleteOrder}
               />
             ) : (
