@@ -164,7 +164,7 @@ export default function ShoppingCart(){
       const MAX_PRODUCTS_PER_ORDER = 30;
       const totalQuantity = check.reduce((sum, checkedItemId) => {
         const item = cart.find((item) => item.id.toString() == checkedItemId);
-        return sum + (item?.quantity || 0);
+        return sum + Number(item?.quantity || 0);
       }, 0);
       
       if (totalQuantity > MAX_PRODUCTS_PER_ORDER) {
@@ -176,8 +176,8 @@ export default function ShoppingCart(){
       // Validate individual item quantities
       for (const checkedItemId of check) {
         const item = cart.find((item) => item.id.toString() == checkedItemId);
-        if (item && item.quantity > MAX_PRODUCTS_PER_ORDER) {
-          setMessage(`每筆訂單最多只能訂購 ${MAX_PRODUCTS_PER_ORDER} 個商品。「${item.name}」的數量為 ${item.quantity}，請減少數量。`);
+        if (item && Number(item.quantity) > MAX_PRODUCTS_PER_ORDER) {
+          setMessage(`每筆訂單最多只能訂購 ${MAX_PRODUCTS_PER_ORDER} 個商品。「${item.name}」的數量為 ${Number(item.quantity)}，請減少數量。`);
           setTimeout(() => setMessage('empty'), 3500);
           return;
         }
