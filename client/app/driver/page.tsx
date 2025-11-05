@@ -653,7 +653,7 @@ const DriverPage: React.FC = () => {
                                             </p>
                                             <div className="space-y-2">
                                                 {overdueOrders.map((order: any) => (
-                                                    <div key={order.order_id} className="bg-white p-3 rounded border border-red-300">
+                                                    <div key={`${order.order_id}-${order.service}`} className="bg-white p-3 rounded border border-red-300">
                                                         <p className="text-sm font-medium">
                                                             訂單 #{order.order_id} ({order.service === 'necessities' ? '生活用品' : '農產品'})
                                                         </p>
