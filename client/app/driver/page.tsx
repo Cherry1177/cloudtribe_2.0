@@ -142,7 +142,12 @@ const DriverPage: React.FC = () => {
             console.log('Filtered unaccepted orders:', data);
             console.log('Final unaccepted orders count:', data.length);
             console.log('Order details:', data.map(o => ({ id: o.id, status: o.order_status, timestamp: o.timestamp, service: o.service })));
+            
+            // Set the orders state
             setUnacceptedOrders(data);
+            
+            // Log after state update (will show in next render)
+            console.log('State updated - unacceptedOrders will be set to:', data.length, 'orders');
         } catch (error) {
             console.error('Error fetching unaccepted orders:', error);
         }
@@ -401,7 +406,8 @@ const DriverPage: React.FC = () => {
 
     // Auto-fetch unaccepted orders when driver data is loaded and list should be shown
     useEffect(() => {
-        if (isClient && user?.is_driver && driverData && showUnacceptedOrders && unacceptedOrders.length === 0) {
+        if (isClient && user?.is_driver && driverData?.id && showUnacceptedOrders) {
+            console.log('Auto-fetching unaccepted orders - driverData:', driverData?.id, 'showUnacceptedOrders:', showUnacceptedOrders);
             handleFetchUnacceptedOrders();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -791,19 +797,46 @@ const DriverPage: React.FC = () => {
                                 {showUnacceptedOrders && (
                                     <Card className="w-full hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-gray-400 bg-white">
                                         <CardHeader>
-                                            <CardTitle className="text-2xl font-bold text-center text-gray-900">
-                                                未接單列表
-                                            </CardTitle>
+                                            <div className="flex items-center justify-between">
+                                                <CardTitle className="text-2xl font-bold text-gray-900">
+                                                    未接單列表 {unacceptedOrders.length > 0 && `(${unacceptedOrders.length} 筆訂單)`}
+                                                </CardTitle>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={handleFetchUnacceptedOrders}
+                                                    className="ml-4"
+                                                >
+                                                    重新整理
+                                                </Button>
+                                            </div>
                                         </CardHeader>
                                         <CardContent>
-                                            <OrderListWithPagination
-                                                orders={unacceptedOrders}
-                                                onAccept={handleAcceptOrder}
-                                                onNavigate={(orderId: string) => handleNavigate(orderId, driverData?.id || 0)}
-                                                onComplete={handleCompleteOrder}
-                                                driverId={driverData?.id || 0}
-                                                hasOverdueOrders={overdueCount > 0}
-                                            />
+                                            {(() => {
+                                                console.log('Rendering unaccepted orders list - count:', unacceptedOrders.length);
+                                                console.log('Orders array:', unacceptedOrders);
+                                                return null;
+                                            })()}
+                                            {unacceptedOrders.length === 0 ? (
+                                                <div className="text-center py-8">
+                                                    <p className="text-gray-500 mb-4">目前沒有未接單訂單</p>
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={handleFetchUnacceptedOrders}
+                                                    >
+                                                        重新載入訂單
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <OrderListWithPagination
+                                                    orders={unacceptedOrders}
+                                                    onAccept={handleAcceptOrder}
+                                                    onNavigate={(orderId: string) => handleNavigate(orderId, driverData?.id || 0)}
+                                                    onComplete={handleCompleteOrder}
+                                                    driverId={driverData?.id || 0}
+                                                    hasOverdueOrders={overdueCount > 0}
+                                                />
+                                            )}
                                         </CardContent>
                                     </Card>
                                 )}
