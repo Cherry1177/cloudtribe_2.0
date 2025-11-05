@@ -239,7 +239,7 @@ def handle_message(event):
             line_bot_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
-                    messages=[TextMessage(text="請輸入您的 Email，以寄送驗證碼")]
+                    messages=[TextMessage(text="請輸入您的 Email，以寄送驗證碼，信箱請用學校的(NCCU)註冊")]
                 )
             )
             return

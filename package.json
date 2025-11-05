@@ -7,7 +7,7 @@
     "scripts": {
         "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
         "dev:frontend": "cd client && npm run dev",
-        "dev:backend": "source venv/bin/activate && python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload",
+        "dev:backend": "/bin/bash -c \"source venv/bin/activate && python3.13 -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload\"",
         "prod:frontend": "cd client && sudo rm -rf .next && npm install && npm run build && pm2 start npm --name \"frontend\" -- run start",
         "prod:backend": "cd . && source venv/bin/activate && PYTHONPATH=backend pm2 start venv/bin/uvicorn --name fastapi-app --interpreter venv/bin/python3 -- backend.main:app --host 0.0.0.0 --port 8001",
         "prod": "npm run prod:frontend && npm run prod:backend"
