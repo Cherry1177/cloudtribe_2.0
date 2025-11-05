@@ -34,6 +34,7 @@ export default async (phase) => {
     },
 
     images: {
+      unoptimized: true, // Disable Next.js image optimization
       remotePatterns: [
         {
           protocol: "https",
@@ -112,7 +113,7 @@ export default async (phase) => {
           source: "/api/:path*",
           destination: isDev
             ? `http://${networkIP}:8000/api/:path*`
-            : "https://www.cloudtribe.site/api/:path*",
+            : "https://cloudtribe.site/api/:path*",
         },
       ];
     },
