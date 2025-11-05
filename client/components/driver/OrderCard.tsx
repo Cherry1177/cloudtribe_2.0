@@ -43,20 +43,43 @@ const OrderCard: React.FC<{
     const [locationError, setLocationError] = useState("");
 
     // Calculate time remaining until order expires
+    // Note: Backend already handles expiry by marking orders as '已過期'
+    // We only calculate time remaining for orders that are still '未接單' (not expired)
     useEffect(() => {
         const calculateTimeRemaining = () => {
+            // Only calculate for unaccepted orders (backend ensures these are not expired)
             if (!order.timestamp || order.order_status !== '未接單') {
                 setTimeRemaining('');
                 return;
             }
 
             const now = new Date();
-            const orderTime = new Date(order.timestamp);
-            const expiryTime = new Date(orderTime.getTime() + (2 * 60 * 60 * 1000)); // 2 hours later
+            // Parse timestamp - handle both ISO string and UTC timestamps
+            let orderTime: Date;
+            if (typeof order.timestamp === 'string') {
+                // If timestamp is a string, parse it
+                orderTime = new Date(order.timestamp);
+            } else {
+                orderTime = new Date(order.timestamp);
+            }
+
+            // Check if orderTime is valid
+            if (isNaN(orderTime.getTime())) {
+                console.error('Invalid timestamp:', order.timestamp);
+                setTimeRemaining('');
+                return;
+            }
+
+            // Calculate expiry time (2 hours after order creation)
+            const expiryTime = new Date(orderTime.getTime() + (2 * 60 * 60 * 1000));
             const timeDiff = expiryTime.getTime() - now.getTime();
 
+            // If backend says it's '未接單', it means it's NOT expired
+            // But we still show time remaining for user information
             if (timeDiff <= 0) {
-                setTimeRemaining('已過期');
+                // This shouldn't happen if backend logic is correct, but handle it anyway
+                // Don't show "已過期" here - backend will mark it as expired
+                setTimeRemaining('');
                 return;
             }
 
@@ -71,7 +94,8 @@ const OrderCard: React.FC<{
         };
 
         calculateTimeRemaining();
-        const interval = setInterval(calculateTimeRemaining, 60000); // Update every minute
+        // Update every minute to show countdown
+        const interval = setInterval(calculateTimeRemaining, 60000);
 
         return () => clearInterval(interval);
     }, [order.timestamp, order.order_status]);
@@ -437,11 +461,16 @@ const OrderCard: React.FC<{
                         <CardDescription className="text-lg text-white font-semibold">消費者姓名: {order.buyer_name}</CardDescription>
                         {timeRemaining && order.order_status === '未接單' && (
                             <div className={`text-sm mt-1 font-medium ${
-                                timeRemaining.includes('已過期') ? 'text-red-300' :
                                 timeRemaining.includes('分鐘') && !timeRemaining.includes('小時') ? 'text-yellow-300' :
                                 'text-green-300'
                             }`}>
                                 ⏰ {timeRemaining}
+                            </div>
+                        )}
+                        {/* Show expired status only if backend marked it as expired */}
+                        {order.order_status === '已過期' && (
+                            <div className="text-sm mt-1 font-medium text-red-300">
+                                ⏰ 已過期
                             </div>
                         )}
                     </div>
@@ -476,7 +505,27 @@ const OrderCard: React.FC<{
                     {order.order_status !== '未接單' && (
                         <p className="text-sm text-gray-700 font-bold">聯絡電話: {order.buyer_phone}</p>
                     )}
-                    <p className="text-sm text-gray-700 font-bold">下單時間: {order.timestamp?.split('.')[0].replace('T', ' ')}</p>
+                    <p className="text-sm text-gray-700 font-bold">
+                        下單時間: {order.timestamp ? (() => {
+                            try {
+                                const date = new Date(order.timestamp);
+                                // Format in local timezone (Taiwan time)
+                                return date.toLocaleString('zh-TW', {
+                                    timeZone: 'Asia/Taipei',
+                                    year: 'numeric',
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    hour12: false
+                                });
+                            } catch (e) {
+                                // Fallback to simple string replacement if parsing fails
+                                return order.timestamp?.split('.')[0].replace('T', ' ') || '';
+                            }
+                        })() : '無'}
+                    </p>
                     <p className="text-sm text-gray-700 font-bold">送達地點: {order.location}</p>
                     
                 </div>

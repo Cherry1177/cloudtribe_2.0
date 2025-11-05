@@ -362,7 +362,7 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
                 "order_type": order[7],
                 "order_status": order[8],
                 "note": order[9],
-                "timestamp": order[10],
+                "timestamp": order[10].isoformat() if order[10] else None,
                 "service":'necessities',
                 "items": [{
                     #"order_id": item[1], 
@@ -412,7 +412,7 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
                     "category": agri_order[13]
                 }],
                 "is_put": agri_order[14],
-                "timestamp": agri_order[15]
+                "timestamp": agri_order[15].isoformat() if agri_order[15] else None
 
             }
             order_list.append(agri_order_dict)
