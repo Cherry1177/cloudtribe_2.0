@@ -123,28 +123,12 @@ const DriverPage: React.FC = () => {
             
             let data: Order[] = await response.json();
             console.log('Raw orders data:', data);
+            console.log('Total orders received:', data.length);
             
-            // Filter for unaccepted orders and remove expired ones
-            const now = new Date();
-            const ORDER_EXPIRY_HOURS = 2; // Orders expire after 2 hours
-            
-            data = data.filter((order) => {
-                // Only show unaccepted orders
-                if (order.order_status !== "未接單") return false;
-                
-                // Check if order is expired
-                if (order.timestamp) {
-                    const orderTime = new Date(order.timestamp);
-                    const hoursOld = (now.getTime() - orderTime.getTime()) / (1000 * 60 * 60);
-                    
-                    if (hoursOld > ORDER_EXPIRY_HOURS) {
-                        console.log(`Order ${order.id} is ${hoursOld.toFixed(1)} hours old - filtering out`);
-                        return false;
-                    }
-                }
-                
-                return true;
-            }).sort((a, b) => {
+            // Backend already filters for unaccepted orders and handles expiry
+            // Just sort the orders by urgency and timestamp
+            // No need to filter again since backend already does it
+            data = data.sort((a, b) => {
                 // Sort by urgency first, then by timestamp (newest first)
                 if (b.is_urgent !== a.is_urgent) {
                     return (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0);
@@ -155,7 +139,9 @@ const DriverPage: React.FC = () => {
                 return timeB - timeA;
             });
                 
-            console.log('Filtered unaccepted orders (excluding expired):', data);
+            console.log('Filtered unaccepted orders:', data);
+            console.log('Final unaccepted orders count:', data.length);
+            console.log('Order details:', data.map(o => ({ id: o.id, status: o.order_status, timestamp: o.timestamp, service: o.service })));
             setUnacceptedOrders(data);
         } catch (error) {
             console.error('Error fetching unaccepted orders:', error);

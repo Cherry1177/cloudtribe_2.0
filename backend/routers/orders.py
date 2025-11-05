@@ -339,12 +339,12 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
                 "during": "fetch_orders"
             })
         
-        # Then fetch all orders (excluding expired ones for drivers)
+        # Then fetch all unaccepted orders (excluding expired ones for drivers)
         cur.execute("""
             SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price, 
                 order_type, order_status, note, timestamp
             FROM orders
-            WHERE order_status != '已過期'
+            WHERE order_status = '未接單'
         """)
         orders = cur.fetchall()
         order_list = []
@@ -374,12 +374,13 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
                     "location": str(item[7]),
                     "category":str(item[8])} for item in items]  
             })
-        # Add agricultural_product orders
+        # Add agricultural_product orders (only unaccepted ones)
         cur.execute("""
             SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone, agri_p_o.end_point, agri_p_o.status, agri_p_o.note, 
                     agri_p.id, agri_p.name, agri_p.price, agri_p_o.quantity, agri_p.img_link, agri_p_o.starting_point, agri_p.category, agri_p_o.is_put,agri_p_o.timestamp
             FROM agricultural_product_order as agri_p_o
             JOIN agricultural_produce as agri_p ON agri_p.id = agri_p_o.produce_id
+            WHERE agri_p_o.status = '未接單'
         """)
         agri_orders = cur.fetchall()
         for agri_order in agri_orders:
