@@ -232,17 +232,19 @@ const Sidebar: React.FC<SidebarProps> = ({ filterCategory, className }) => {
             </SheetHeader>
             <div className="overflow-y-auto h-[calc(100vh-180px)] p-6 sm:p-0">
               <div className="grid gap-4 py-4">
-                {selectedCategoryObject.subcategories.map((subcategory) => (
-                  <div key={subcategory}>
-                    <Button
-                      variant="ghost"
-                      className="w-full text-left"
-                      onClick={() => handleSubcategorySelect(subcategory)}
-                    >
-                      {subcategory}
-                    </Button>
-                  </div>
-                ))}
+                {selectedCategoryObject.subcategories
+                  .filter((subcategory): subcategory is string => typeof subcategory === 'string')
+                  .map((subcategory) => (
+                    <div key={subcategory}>
+                      <Button
+                        variant="ghost"
+                        className="w-full text-left"
+                        onClick={() => handleSubcategorySelect(subcategory)}
+                      >
+                        {subcategory}
+                      </Button>
+                    </div>
+                  ))}
               </div>
             </div>
             <SheetFooter className="p-6 sm:p-0 absolute bottom-0 left-0 right-0 bg-white border-t">
