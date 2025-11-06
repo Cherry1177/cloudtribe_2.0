@@ -117,7 +117,8 @@ class UserService {
   }
   async bindLineAccount(userId: number, lineUserId: string){
       try {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/bind-line`, {
+          // Use relative URL - Next.js rewrites will handle routing to backend
+          const response = await fetch('/api/users/bind-line', {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',

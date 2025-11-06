@@ -91,6 +91,13 @@ class DriverOrder(BaseModel):
     previous_driver_phone: Optional[str] = None
     service: str
 
+class CompleteOrderRequest(BaseModel):
+    """
+    Model representing a complete order request with GPS verification.
+    """
+    latitude: float
+    longitude: float
+
 class TransferOrderRequest(BaseModel):
     """
     Model representing a transfer order request.

@@ -215,9 +215,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
     };
 
     try {
-      // Use environment variable for backend URL
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${backendUrl}/api/orders/`, {
+      // Use relative URL - Next.js rewrites will handle routing to backend
+      // In dev: routes to http://localhost:8000/api/orders/
+      // In production: routes to https://cloudtribe.site/api/orders/
+      const response = await fetch('/api/orders/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

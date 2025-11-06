@@ -7,7 +7,7 @@ interface OrderListWithPaginationProps {
     orders: Order[];
     onAccept: (orderId: string, service: string) => Promise<void>;
     onNavigate: (orderId: string) => void;
-    onComplete: (orderId: string, service: string) => Promise<void>;
+    onComplete: (orderId: string, service: string, latitude?: number, longitude?: number) => Promise<void>;
     driverId: number;
     hasOverdueOrders?: boolean;
 }

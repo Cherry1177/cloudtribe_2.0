@@ -316,13 +316,13 @@ const BuyerOrderCard: React.FC<{
       <CardFooter className="bg-gray-50 p-4 rounded-b-md">
         <div className="w-full flex flex-col space-y-2">
           <div className="flex justify-between items-center">
-            <div className="text-lg font-bold text-green-600">
-              總金額: ${currentOrder.total_price}
-            </div>
-            {currentOrder.order_status === '未接單' && (
-              <Badge variant="outline" className="text-yellow-600 border-yellow-600">
-                等待接單中...
-              </Badge>
+          <div className="text-lg font-bold text-green-600">
+            總金額: ${currentOrder.total_price}
+          </div>
+          {currentOrder.order_status === '未接單' && (
+            <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+              等待接單中...
+            </Badge>
             )}
           </div>
           {/* Cancel button */}

@@ -11,4 +11,3 @@ bcrypt
 pandas
 openpyxl
 schedule
-pytz

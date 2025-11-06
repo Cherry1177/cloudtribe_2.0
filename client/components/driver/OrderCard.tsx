@@ -23,7 +23,7 @@ const OrderCard: React.FC<{
     order: Order;
     driverId: number;
     onAccept: (orderId: string, service: string) => Promise<void>;
-    onComplete: (orderId: string, service: string) => Promise<void>;
+    onComplete: (orderId: string, service: string, latitude?: number, longitude?: number) => Promise<void>;
     onPickup?: (orderId: string, service: string) => Promise<void>;
     showCompleteButton?: boolean;
     hasOverdueOrders?: boolean;
@@ -292,23 +292,77 @@ const OrderCard: React.FC<{
      * Handle delivery completion with location check
      */
     const handleCompleteWithLocationCheck = async () => {
-        const isAtLocation = await checkDeliveryLocation();
-        
-        if (isAtLocation) {
-            try {
-                await onComplete(order.id?.toString() || '', order.service);
-                alert('配送完成！');
-            } catch (error) {
-                console.error('Error completing order:', error);
-                alert('完成配送失敗，請稍後再試');
-                throw error; // Re-throw to let parent handle the error
+        return new Promise<void>((resolve, reject) => {
+            if (!navigator.geolocation) {
+                alert("此瀏覽器不支援定位功能");
+                reject(new Error("Geolocation not supported"));
+                return;
             }
-        } else {
-            // Show location error - user needs to be at delivery location
-            const errorMessage = locationError || "請確認您已到達配送地點再完成配送";
-            alert(errorMessage);
-            throw new Error(errorMessage); // Throw error to prevent order removal
-        }
+
+            setIsCheckingLocation(true);
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    try {
+                        const { latitude, longitude } = position.coords;
+                        
+                        // Verify location matches delivery address
+                        const isAtLocation = await checkDeliveryLocation();
+                        
+                        if (isAtLocation) {
+                            try {
+                                // Pass GPS coordinates to onComplete
+                                await onComplete(
+                                    order.id?.toString() || '', 
+                                    order.service,
+                                    latitude,
+                                    longitude
+                                );
+                                alert('配送完成！');
+                                resolve();
+                            } catch (error) {
+                                console.error('Error completing order:', error);
+                                alert('完成配送失敗，請稍後再試');
+                                reject(error);
+                            }
+                        } else {
+                            // Show location error - user needs to be at delivery location
+                            const errorMessage = locationError || "請確認您已到達配送地點再完成配送";
+                            alert(errorMessage);
+                            reject(new Error(errorMessage));
+                        }
+                    } catch (error) {
+                        setIsCheckingLocation(false);
+                        console.error('Error in location check:', error);
+                        alert('位置驗證失敗，請稍後再試');
+                        reject(error);
+                    } finally {
+                        setIsCheckingLocation(false);
+                    }
+                },
+                (error) => {
+                    setIsCheckingLocation(false);
+                    let errorMessage = "無法取得位置資訊";
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = "請允許定位權限以完成配送";
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = "無法取得位置資訊";
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = "定位超時，請稍後再試";
+                            break;
+                    }
+                    alert(errorMessage);
+                    reject(new Error(errorMessage));
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        });
     };
 
     /**

@@ -289,30 +289,54 @@ const DriverPage: React.FC = () => {
      * Handle completing an order.
      * @param orderId - The ID of the order to complete.
      */
-    const handleCompleteOrder = async (orderId: string, service: string) => {
+    const handleCompleteOrder = async (orderId: string, service: string, latitude?: number, longitude?: number) => {
         if (!driverData?.id) return;
         
         try {
+            // Get GPS coordinates if not provided
+            let finalLat = latitude;
+            let finalLng = longitude;
+            
+            if (finalLat === undefined || finalLng === undefined) {
+                // Get current position if not provided
+                const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000
+                    });
+                });
+                finalLat = position.coords.latitude;
+                finalLng = position.coords.longitude;
+            }
+            
             const response = await fetch(`/api/orders/${service}/${orderId}/complete`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                body: JSON.stringify({
+                    latitude: finalLat,
+                    longitude: finalLng
+                })
             });
 
             if (!response.ok) {
-                throw new Error('Failed to complete order');
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || 'Failed to complete order');
             }
 
-            alert('訂單已完成');
+            const result = await response.json();
             
             // Refresh overdue orders and driver orders after completion
             await handleFetchOverdueOrders(driverData.id);
             await handleFetchDriverOrders(driverData.id);
+            
+            // Order will automatically move to delivery history (已送達 status)
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error completing order:', error);
-            alert('完成訂單失敗');
+            alert(error.message || '完成訂單失敗');
+            throw error; // Re-throw to let caller handle
         }
     };
 

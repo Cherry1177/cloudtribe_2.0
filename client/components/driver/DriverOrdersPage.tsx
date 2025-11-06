@@ -14,7 +14,7 @@ interface DriverOrdersPageProps {
     driverData: Driver;
     onAccept: (orderId: string, service: string) => Promise<void>;
     onNavigate: (orderId: string) => void;
-    onComplete: (orderId: string, service: string) => Promise<void>;
+    onComplete: (orderId: string, service: string, latitude?: number, longitude?: number) => Promise<void>;
     onPickup?: (orderId: string, service: string) => Promise<void>;
 }
 
@@ -248,10 +248,10 @@ const DriverOrdersPage: React.FC<DriverOrdersPageProps> = ({
 
 
     // Handle local complete of order
-    const handleLocalComplete = async (orderId: string, service: string) => {
+    const handleLocalComplete = async (orderId: string, service: string, latitude?: number, longitude?: number) => {
         try {
             // Call the complete API - this includes location verification
-            await onComplete(orderId, service);
+            await onComplete(orderId, service, latitude, longitude);
             
             // Only remove from local state if completion was successful
             // The onComplete function will throw an error if location verification fails
