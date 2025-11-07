@@ -97,3 +97,11 @@ temp/
 
 # Local development
 .local/
+Archive/
+cloudtribe.site/
+ssl_files/
+*.pem
+*.pub
+EC2_FIX_GUIDE.md
+EC2_MIGRATION_INSTRUCTIONS.md
+*.pem
