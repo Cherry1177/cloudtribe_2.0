@@ -437,6 +437,38 @@ const DriverPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isClient, user?.is_driver, driverData?.id, showUnacceptedOrders]);
 
+    // Poll for new unaccepted orders every 30 seconds
+    useEffect(() => {
+        if (isClient && user?.is_driver && driverData?.id) {
+            const unacceptedOrdersInterval = setInterval(() => {
+                handleFetchUnacceptedOrders();
+            }, 30000); // Poll every 30 seconds
+
+            return () => {
+                clearInterval(unacceptedOrdersInterval);
+            };
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isClient, user?.is_driver, driverData?.id]);
+
+    // Show browser notification when new unaccepted orders are available
+    useEffect(() => {
+        if (unacceptedOrders.length > 0 && 'Notification' in window) {
+            // Request notification permission if not already granted
+            if (Notification.permission === 'default') {
+                Notification.requestPermission();
+            } else if (Notification.permission === 'granted' && document.hidden) {
+                // Only show notification if page is hidden (user is not actively viewing)
+                new Notification('有新的未接單訂單', {
+                    body: `目前有 ${unacceptedOrders.length} 筆未接單訂單等待處理`,
+                    icon: '/favicon.ico',
+                    tag: 'unaccepted-orders',
+                    requireInteraction: false
+                });
+            }
+        }
+    }, [unacceptedOrders.length]);
+
     /**
      * Fetch pending transfer requests for the driver
      */
@@ -726,13 +758,25 @@ const DriverPage: React.FC = () => {
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                 </svg>
                                             </div>
-                                            <h3 className="text-xl font-bold text-gray-900 mb-2">未接單表單</h3>
+                                            <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center justify-center gap-2">
+                                                未接單表單
+                                                {unacceptedOrders.length > 0 && (
+                                                    <span className="bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center animate-pulse">
+                                                        {unacceptedOrders.length}
+                                                    </span>
+                                                )}
+                                            </h3>
                                             <p className="text-gray-600 mb-4">查看並接受新的配送訂單</p>
                                             <Button 
-                                                className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+                                                className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 relative"
                                                 onClick={toggleUnacceptedOrders}
                                             >
                                                 {showUnacceptedOrders ? '隱藏未接單表單' : '取得未接單表單'}
+                                                {unacceptedOrders.length > 0 && !showUnacceptedOrders && (
+                                                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-bounce">
+                                                        {unacceptedOrders.length}
+                                                    </span>
+                                                )}
                                             </Button>
                                         </CardContent>
                                     </Card>
@@ -755,6 +799,42 @@ const DriverPage: React.FC = () => {
                                         </CardContent>
                                     </Card>
                                 </div>
+
+                                {/* Unaccepted Orders Notification */}
+                                {unacceptedOrders.length > 0 && !showUnacceptedOrders && (
+                                    <Card className="w-full hover:shadow-xl transition-all duration-300 border-2 border-purple-400 hover:border-purple-500 bg-gradient-to-r from-purple-50 to-pink-50">
+                                        <CardHeader>
+                                            <div className="flex items-center justify-between">
+                                                <CardTitle className="text-xl font-bold text-gray-900 flex items-center">
+                                                    <span className="relative">
+                                                        🔔 有新的未接單訂單
+                                                        <span className="absolute -top-2 -right-6 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center animate-pulse">
+                                                            {unacceptedOrders.length}
+                                                        </span>
+                                                    </span>
+                                                </CardTitle>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={toggleUnacceptedOrders}
+                                                >
+                                                    查看訂單
+                                                </Button>
+                                            </div>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <p className="text-gray-700 mb-3">
+                                                目前有 <span className="font-bold text-purple-600">{unacceptedOrders.length}</span> 筆未接單訂單等待處理
+                                            </p>
+                                            <Button
+                                                className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-semibold"
+                                                onClick={toggleUnacceptedOrders}
+                                            >
+                                                立即查看未接單訂單
+                                            </Button>
+                                        </CardContent>
+                                    </Card>
+                                )}
 
                                 {/* Pending Transfers Notification */}
                                 {pendingTransfers.length > 0 && (

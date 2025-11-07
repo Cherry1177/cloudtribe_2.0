@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from psycopg2.extensions import connection as Connection
 from backend.models.consumer import ProductInfo, AddCartRequest, CartItem, UpdateCartQuantityRequest, PurchaseProductRequest, PurchasedProduct
 from backend.database import get_db_connection
+from backend.handlers.send_message import LineMessageService
 import logging
 import json
 from typing import List
@@ -22,6 +23,8 @@ from datetime import datetime
 import datetime as dt
 router = APIRouter()
 import os
+
+line_service = LineMessageService()
 
 
 log_dir = os.path.join(os.getcwd(), 'backend', 'logs')
@@ -39,6 +42,72 @@ logging.basicConfig(
 
 
 logger = logging.getLogger(__name__)
+
+async def notify_drivers_agricultural_order(order_id: int, req: PurchaseProductRequest, conn: Connection):
+    """
+    Notify all drivers with LINE accounts about a new agricultural product order.
+    
+    Args:
+        order_id: The ID of the newly created order
+        req: The purchase request details
+        conn: Database connection
+    """
+    try:
+        cur = conn.cursor()
+        
+        # Get all drivers who have LINE accounts bound
+        cur.execute("""
+            SELECT DISTINCT u.id, u.name, u.line_user_id
+            FROM users u
+            INNER JOIN drivers d ON u.id = d.user_id
+            WHERE u.is_driver = TRUE 
+            AND u.line_user_id IS NOT NULL 
+            AND u.line_user_id != ''
+        """)
+        drivers = cur.fetchall()
+        cur.close()
+        
+        if not drivers:
+            logger.info("No drivers with LINE accounts found to notify for agricultural order")
+            return
+        
+        # Get produce name for the message
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM agricultural_produce WHERE id = %s", (req.produce_id,))
+        produce_result = cur.fetchone()
+        produce_name = produce_result[0] if produce_result else "農產品"
+        cur.close()
+        
+        # Build notification message
+        message = f"🔔 有新的農產品未接單訂單\n\n"
+        message += f"📦 訂單編號: #{order_id}\n"
+        message += f"🌾 商品名稱: {produce_name}\n"
+        message += f"📊 數量: {req.quantity}\n"
+        message += f"📍 起點: {req.starting_point}\n"
+        message += f"📍 終點: {req.end_point}\n"
+        message += "\n─────────────\n"
+        message += "請前往系統查看並接受訂單"
+        
+        # Send notification to each driver
+        notification_count = 0
+        for driver in drivers:
+            driver_user_id = driver[0]
+            driver_name = driver[1]
+            try:
+                success = await line_service.send_message_to_user(driver_user_id, message)
+                if success:
+                    notification_count += 1
+                    logger.info(f"LINE notification sent to driver {driver_name} (user_id: {driver_user_id}) for agricultural order {order_id}")
+                else:
+                    logger.warning(f"Failed to send LINE notification to driver {driver_name} (user_id: {driver_user_id})")
+            except Exception as e:
+                logger.warning(f"Error sending LINE notification to driver {driver_name} (user_id: {driver_user_id}): {str(e)}")
+        
+        logger.info(f"Notified {notification_count}/{len(drivers)} drivers about new agricultural order {order_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in notify_drivers_agricultural_order: {str(e)}")
+        raise
 
 def log_event(event_type: str, data: dict):
     log_data = {
@@ -315,6 +384,14 @@ async def purchase_product(req: PurchaseProductRequest, conn: Connection = Depen
             "seller_id": req.seller_id,
             "status": "success"
         })
+        
+        # Notify all drivers about the new agricultural product order
+        try:
+            await notify_drivers_agricultural_order(order_id, req, conn)
+        except Exception as e:
+            logging.warning(f"Failed to notify drivers about new agricultural order {order_id}: {str(e)}")
+            # Don't fail the order creation if notification fails
+        
         return order_id
     except Exception as e:
         conn.rollback()

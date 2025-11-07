@@ -48,6 +48,69 @@ def log_event(event_type: str, data: dict):
     }
     logger.info(json.dumps(log_data))
 
+async def notify_drivers_new_order(order_id: int, order: DetailedOrder, conn: Connection):
+    """
+    Notify all drivers with LINE accounts about a new unaccepted order.
+    
+    Args:
+        order_id: The ID of the newly created order
+        order: The order details
+        conn: Database connection
+    """
+    try:
+        cur = conn.cursor()
+        
+        # Get all drivers who have LINE accounts bound
+        cur.execute("""
+            SELECT DISTINCT u.id, u.name, u.line_user_id
+            FROM users u
+            INNER JOIN drivers d ON u.id = d.user_id
+            WHERE u.is_driver = TRUE 
+            AND u.line_user_id IS NOT NULL 
+            AND u.line_user_id != ''
+        """)
+        drivers = cur.fetchall()
+        cur.close()
+        
+        if not drivers:
+            logger.info("No drivers with LINE accounts found to notify")
+            return
+        
+        # Build notification message
+        urgent_indicator = "🚨 緊急訂單！" if order.is_urgent else ""
+        message = f"🔔 {urgent_indicator}有新的未接單訂單\n\n"
+        message += f"📦 訂單編號: #{order_id}\n"
+        message += f"📍 配送地點: {order.location}\n"
+        message += f"💰 總金額: ${order.total_price}\n"
+        message += f"📅 日期: {order.date}\n"
+        message += f"⏰ 時間: {order.time}\n"
+        
+        if order.is_urgent:
+            message += f"⚠️ 此為緊急訂單，請優先處理\n"
+        
+        message += "\n─────────────\n"
+        message += "請前往系統查看並接受訂單"
+        
+        # Send notification to each driver
+        notification_count = 0
+        for driver in drivers:
+            driver_user_id = driver[0]
+            driver_name = driver[1]
+            try:
+                success = await line_service.send_message_to_user(driver_user_id, message)
+                if success:
+                    notification_count += 1
+                    logger.info(f"LINE notification sent to driver {driver_name} (user_id: {driver_user_id}) for order {order_id}")
+                else:
+                    logger.warning(f"Failed to send LINE notification to driver {driver_name} (user_id: {driver_user_id})")
+            except Exception as e:
+                logger.warning(f"Error sending LINE notification to driver {driver_name} (user_id: {driver_user_id}): {str(e)}")
+        
+        logger.info(f"Notified {notification_count}/{len(drivers)} drivers about new order {order_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in notify_drivers_new_order: {str(e)}")
+        raise
 
 def get_db():
     """
@@ -126,6 +189,14 @@ async def create_order(order: DetailedOrder, conn: Connection = Depends(get_db),
             "total_price": order.total_price,
             "status": "success"
         })
+        
+        # Notify all drivers about the new unaccepted order
+        try:
+            await notify_drivers_new_order(order_id, order, conn)
+        except Exception as e:
+            logger.warning(f"Failed to notify drivers about new order {order_id}: {str(e)}")
+            # Don't fail the order creation if notification fails
+        
         return order
     except Exception as e:
         log_event("ORDER_CREATION_ERROR", {
