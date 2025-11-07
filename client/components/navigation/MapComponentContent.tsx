@@ -207,7 +207,6 @@ const MapComponentContent: React.FC = () => {
   const [aggregatedItemsByLocation, setAggregatedItemsByLocation] = useState<AggregatedLocation[]>([]);
 
 
-
   // Map ref
   const mapRef = useRef<google.maps.Map | null>(null);
 
@@ -904,7 +903,6 @@ const MapComponentContent: React.FC = () => {
     }
 
     const removed = destinations[index];
-
     const updated = Array.from(destinations);
     updated.splice(index, 1);
     setDestinations(updated);
@@ -1061,7 +1059,6 @@ const handleWaypointsOptimized = useCallback((waypointOrder: number[]) => {
   setOptimizeWaypoints(false);
   triggerForceUpdate(); 
 },[destinations]);
-
 
 // Add this aggregation function inside MapComponentContent before the return statement
 interface AggregatedItem {

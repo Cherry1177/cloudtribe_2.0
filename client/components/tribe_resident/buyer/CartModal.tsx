@@ -70,7 +70,7 @@ const CartModal: React.FC<CartModalProps> = ({ cart, onClose, removeFromCart, up
   };
 
   /**
-   * Gets the image URL for a cart item, with retry logic for Carrefour images
+   * Gets the image URL for a cart item, with retry logic for external images
    * @param item - The cart item to get image URL for
    * @returns The image URL
    */

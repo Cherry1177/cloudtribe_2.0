@@ -95,7 +95,7 @@ const ItemList: React.FC<ItemListProps> = ({ products, itemsPerPage, addToCart }
   const currentData = sortedProducts.slice(startIdx, endIdx);
 
   /**
-   * Gets the image URL for a product, with retry logic for Carrefour images
+   * Gets the image URL for a product, with retry logic for external images
    * @param product - The product to get image URL for
    * @returns The image URL
    */
