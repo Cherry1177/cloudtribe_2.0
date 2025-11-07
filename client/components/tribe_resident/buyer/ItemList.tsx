@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faShoppingCart, faDollarSign, faSortAmountDown } from '@fortawesome/free-solid-svg-icons';
+import { faShoppingCart, faSortAmountDown } from '@fortawesome/free-solid-svg-icons';
 import PaginationDemo from "@/components/tribe_resident/buyer/PaginationDemo";
 import { Button } from "@/components/ui/button";
 import { Product } from '@/interfaces/tribe_resident/buyer/buyer';  
@@ -290,18 +290,6 @@ const ItemList: React.FC<ItemListProps> = ({ products, itemsPerPage, addToCart }
                   <FontAwesomeIcon icon={faShoppingCart} className="mr-2" />
                   加入購物車
                 </Button>
-
-                <a 
-                  href={`https://online.carrefour.com.tw/zh/search/?q=${encodeURIComponent(product.name.replace(/\(.*?\)|※.*$|因.*$/g, '').trim())}`}   
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block"
-                >
-                  <Button className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
-                    <FontAwesomeIcon icon={faDollarSign} className="mr-2" />
-                    查看實際價格
-                  </Button>
-                </a>
               </div>
             </div>
           </div>

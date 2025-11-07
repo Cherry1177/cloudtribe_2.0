@@ -46,7 +46,7 @@ import { Order } from "@/interfaces/tribe_resident/buyer/order";
 import DriverService  from '@/services/driver/driver';
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import MapContent from "@/components/navigation/MapContent";
-import { getStoreCoordinates, isKnownStore } from "@/config/stores";
+import { getStoreCoordinates, isKnownStore, STORE_LOCATIONS } from "@/config/stores";
 
 
 // Define libraries for Google Maps
@@ -206,7 +206,6 @@ const MapComponentContent: React.FC = () => {
 
   const [aggregatedItemsByLocation, setAggregatedItemsByLocation] = useState<AggregatedLocation[]>([]);
 
-  const [removedCarrefour, setRemovedCarrefour] = useState<Set<string>>(new Set());
 
 
   // Map ref
@@ -572,32 +571,86 @@ const MapComponentContent: React.FC = () => {
         const geocoder = new window.google.maps.Geocoder();
         const pickupPoints: { name: string; location: LatLng }[] = [];
         const finalDestination = destinations[destinations.length - 1]; // Keep the final destination
+        if (!finalDestination) {
+          console.warn('No final destination found');
+          return;
+        }
 
-        // Geocode all pickup locations (use hardcoded coordinates for known stores)
-        const geocodePromises = Array.from(pickupLocations).map(location => {
-          return new Promise<{ name: string; location: LatLng } | null>((resolve) => {
-            // Check if it's one of our known stores with hardcoded GPS coordinates
-            if (isKnownStore(location)) {
-              const coords = getStoreCoordinates(location);
-              if (coords) {
-                console.log(`✅ Using hardcoded GPS for store: ${location}`, coords);
-                resolve({
-                  name: location,
-                  location: { lat: coords.lat, lng: coords.lng }
-                });
-                return;
-              }
+        // Separate known stores from unknown locations for faster processing
+        const knownStores: { name: string; location: LatLng }[] = [];
+        const unknownLocations: string[] = [];
+        
+        console.log('🔍 Available stores in config:', Object.keys(STORE_LOCATIONS));
+        console.log('🔍 Pickup locations to match:', Array.from(pickupLocations));
+        
+        Array.from(pickupLocations).forEach(location => {
+          // Try exact match first
+          if (isKnownStore(location)) {
+            const coords = getStoreCoordinates(location);
+            if (coords) {
+              console.log(`✅ Using hardcoded GPS for store (exact match): ${location}`, coords);
+              knownStores.push({
+                name: location,
+                location: { lat: coords.lat, lng: coords.lng }
+              });
+              return;
             }
+          }
+          
+          // Try fuzzy matching (remove spaces, parentheses variations, case insensitive)
+          const normalizedLocation = location.replace(/\s+/g, '').replace(/[()（）]/g, '').toLowerCase();
+          const storeKeys = Object.keys(STORE_LOCATIONS);
+          const matchedStore = storeKeys.find(storeKey => {
+            const normalizedStore = storeKey.replace(/\s+/g, '').replace(/[()（）]/g, '').toLowerCase();
+            // Try multiple matching strategies
+            if (normalizedStore === normalizedLocation) return true;
+            if (location.includes(storeKey) || storeKey.includes(location)) return true;
+            // Try partial matching (e.g., "得正飲料店" matches "得正飲料店（政大側門）")
+            const locationWords = normalizedLocation.split(/[店飯]/);
+            const storeWords = normalizedStore.split(/[店飯]/);
+            if (locationWords.some(word => word && storeWords.includes(word))) return true;
+            return false;
+          });
+          
+          if (matchedStore) {
+            const coords = getStoreCoordinates(matchedStore);
+            if (coords) {
+              console.log(`✅ Using hardcoded GPS for store (fuzzy match): ${location} -> ${matchedStore}`, coords);
+              knownStores.push({
+                name: location,
+                location: { lat: coords.lat, lng: coords.lng }
+              });
+              return;
+            }
+          }
+          
+          console.log(`⚠️ No match found for location: "${location}" - will geocode`);
+          // If not found, add to unknown locations for geocoding
+          unknownLocations.push(location);
+        });
+        
+        console.log(`📊 Matched ${knownStores.length} known stores, ${unknownLocations.length} need geocoding`);
+        
+        // Geocode only unknown locations (much faster if most are known stores)
+        const geocodePromises = unknownLocations.map(location => {
+          return new Promise<{ name: string; location: LatLng } | null>((resolve) => {
+            // Add timeout for geocoding requests (3 seconds - faster timeout)
+            const timeoutId = setTimeout(() => {
+              console.warn(`⏱️ Geocoding timeout for: ${location}`);
+              resolve(null);
+            }, 3000);
             
-            // Fallback to geocoding for unknown locations
+            // Geocode unknown locations
             geocoder.geocode(
               {
                 address: location,
                 componentRestrictions: { country: 'TW' }
               },
               (results, status) => {
+                clearTimeout(timeoutId); // Clear timeout if geocoding completes
                 if (status === 'OK' && results && results[0]) {
                   const loc = results[0].geometry.location;
+                  console.log(`✅ Geocoded: ${location}`, { lat: loc.lat(), lng: loc.lng() });
                   resolve({
                     name: location,
                     location: { lat: loc.lat(), lng: loc.lng() }
@@ -611,28 +664,49 @@ const MapComponentContent: React.FC = () => {
           });
         });
 
-        const geocodedResults = await Promise.all(geocodePromises);
-        const validPickupPoints = geocodedResults.filter(
-          (point): point is { name: string; location: LatLng } => point !== null
-        );
+        // Combine known stores (instant) with geocoded results
+        const allPickupPoints = [...knownStores];
+        
+        // Only geocode if there are unknown locations
+        if (unknownLocations.length > 0) {
+          const geocodedResults = await Promise.allSettled(geocodePromises);
+          const validGeocodedPoints: { name: string; location: LatLng }[] = geocodedResults
+            .filter((result): result is PromiseFulfilledResult<{ name: string; location: LatLng } | null> => 
+              result.status === 'fulfilled' && result.value !== null
+            )
+            .map(result => result.value as { name: string; location: LatLng });
+          
+          allPickupPoints.push(...validGeocodedPoints);
+        }
 
-        if (validPickupPoints.length > 0) {
+        if (allPickupPoints.length > 0) {
           // Set destinations: pickup points first, then final destination
-          setDestinations([...validPickupPoints, finalDestination]);
+          setDestinations([...allPickupPoints, finalDestination]);
           // Mark that we've populated pickup points for this order
           pickupPointsPopulatedRef.current = orderData.id || null;
-          console.log(`✅ Auto-populated ${validPickupPoints.length} pickup points:`, validPickupPoints);
+          console.log(`✅ Auto-populated ${allPickupPoints.length} pickup points (${knownStores.length} known, ${allPickupPoints.length - knownStores.length} geocoded):`, allPickupPoints);
         } else {
           // Even if no pickup points found, mark as populated to avoid retrying
           pickupPointsPopulatedRef.current = orderData.id || null;
+          console.warn('⚠️ No valid pickup points could be found');
+          // Still set destinations to just the final destination to clear loading state
+          setDestinations([finalDestination]);
         }
       } catch (error) {
         console.error('❌ Error populating pickup points:', error);
+        // On error, still mark as populated to avoid infinite retries
+        pickupPointsPopulatedRef.current = orderData?.id || null;
+        // Ensure destinations is set to at least the final destination to clear loading state
+        if (destinations.length > 0) {
+          const finalDest = destinations[destinations.length - 1];
+          setDestinations([finalDest]);
+        }
       }
     };
 
     // Only run if we have order data and destination is set
     if (orderData && orderData.items && isLoaded && destinations.length >= 1) {
+      console.log('🚀 Starting pickup point population...');
       populatePickupPoints();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -830,14 +904,6 @@ const MapComponentContent: React.FC = () => {
     }
 
     const removed = destinations[index];
-    // If the removed destination contains '家樂福', record it so it's not auto added again
-    if (removed.name.includes("家樂福")) {
-      setRemovedCarrefour(prev => {
-        const newSet = new Set(prev);
-        newSet.add("家樂福");
-        return newSet;
-      });
-    }
 
     const updated = Array.from(destinations);
     updated.splice(index, 1);
@@ -996,46 +1062,12 @@ const handleWaypointsOptimized = useCallback((waypointOrder: number[]) => {
   triggerForceUpdate(); 
 },[destinations]);
 
-const searchNearestCarrefour = async (currentLocation: LatLng): Promise<{name: string; location: LatLng} | null> => {
-  if (!placesService.current) {
-    console.error('Places service not initialized');
-    return null;
-  }
-
-  return new Promise((resolve, reject) => {
-    const request: google.maps.places.PlaceSearchRequest = {
-      location: new google.maps.LatLng(currentLocation.lat, currentLocation.lng),
-      radius: 10000, // search within 20km
-      keyword: '家樂福',
-      type: 'supermarket'
-    };
-
-    placesService.current?.nearbySearch(request, (results, status) => {
-      if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-        // Get the nearest Carrefour
-        const nearest = results[0];
-        if (nearest.geometry && nearest.geometry.location) {
-          resolve({
-            name: nearest.name || '家樂福',
-            location: {
-              lat: nearest.geometry.location.lat(),
-              lng: nearest.geometry.location.lng()
-            }
-          });
-        } else {
-          reject(new Error('無法獲取地點資訊'));
-        }
-      } else {
-        reject(new Error('找不到附近的家樂福'));
-      }
-    });
-  });
-};
 
 // Add this aggregation function inside MapComponentContent before the return statement
 interface AggregatedItem {
   name: string;
   quantity: number;
+  selectedOptions?: Record<string, string[]>;
 }
 
 interface AggregatedLocation {
@@ -1047,53 +1079,28 @@ useEffect(() => {
   const processLocations = async () => {
     if (!driverData?.id || !currentLocation) return [];
     
-    const locationMap: { [location: string]: { [itemName: string]: number } } = {};
-    const processedCarrefour = new Set<string>();
+    const locationMap: { [location: string]: { [itemName: string]: { quantity: number; selectedOptions?: Record<string, string[]> } } } = {};
 
     for (const order of orders) {
-      if (order.order_status === "接單") {
+      // Include orders that are accepted or in delivery (接單, 配送中)
+      if (order.order_status === "接單" || order.order_status === "配送中") {
         for (const item of order.items) {
-          let location = item.location || "未指定地點";
-          
-          if (location.toLowerCase().includes('家樂福') && !removedCarrefour.has('家樂福')) {
-            try {
-              if (!processedCarrefour.has(location)) {
-                const nearestCarrefour = await searchNearestCarrefour(currentLocation);
-                
-                if (nearestCarrefour) {
-                  location = nearestCarrefour.name;
-                  processedCarrefour.add(location);
-
-                  const isCarrefourAdded = destinations.some(
-                    dest => dest.name === nearestCarrefour.name
-                  );
-                  
-                  if (!isCarrefourAdded) {
-                    const updatedDestinations = [...destinations];
-                    const terminal = updatedDestinations.pop();
-                    updatedDestinations.push({
-                      name: nearestCarrefour.name,
-                      location: nearestCarrefour.location
-                    });
-                    if (terminal) {
-                      updatedDestinations.push(terminal);
-                    }
-                    setDestinations(updatedDestinations);
-                  }
-                }
-              }
-            } catch (error) {
-              console.error('搜尋家樂福時發生錯誤:', error);
-            }
-          }
+          const location = item.location || "未指定地點";
 
           if (!locationMap[location]) {
             locationMap[location] = {};
           }
           if (locationMap[location][item.item_name]) {
-            locationMap[location][item.item_name] += item.quantity;
+            locationMap[location][item.item_name].quantity += item.quantity;
+            // Merge selectedOptions if they exist (keep first occurrence's options)
+            if (item.selectedOptions && !locationMap[location][item.item_name].selectedOptions) {
+              locationMap[location][item.item_name].selectedOptions = item.selectedOptions;
+            }
           } else {
-            locationMap[location][item.item_name] = item.quantity;
+            locationMap[location][item.item_name] = {
+              quantity: item.quantity,
+              selectedOptions: item.selectedOptions
+            };
           }
         }
       }
@@ -1101,14 +1108,18 @@ useEffect(() => {
 
     const result = Object.entries(locationMap).map(([location, items]) => ({
       location,
-      items: Object.entries(items).map(([name, quantity]) => ({ name, quantity }))
+      items: Object.entries(items).map(([name, data]) => ({
+        name,
+        quantity: data.quantity,
+        selectedOptions: data.selectedOptions
+      }))
     }));
 
     setAggregatedItemsByLocation(result);
   };
 
   processLocations().catch(console.error);
-}, [orders, currentLocation, destinations, driverData?.id,, removedCarrefour]);
+}, [orders, currentLocation, destinations, driverData?.id]);
 
 return (
   <Suspense fallback={<div>正在加載地圖...</div>}>
@@ -1410,9 +1421,33 @@ return (
                               return (
                                 <tr key={idx} className={checkedItems[itemKey] ? "bg-gray-50" : ""}>
                                   <td className="py-1">
-                                    <span className={checkedItems[itemKey] ? "line-through text-gray-500" : ""}>
-                                      {item.name}
-                                    </span>
+                                    <div className="flex flex-col">
+                                      <span className={checkedItems[itemKey] ? "line-through text-gray-500" : ""}>
+                                        {item.name}
+                                      </span>
+                                      {/* Display customization options */}
+                                      {item.selectedOptions && Object.keys(item.selectedOptions).length > 0 && (
+                                        <div className="mt-1 text-xs text-gray-500">
+                                          {Object.entries(item.selectedOptions).map(([key, values]) => {
+                                            if (!values || values.length === 0) return null;
+                                            const labelMap: Record<string, string> = {
+                                              'ice': '冰度',
+                                              'sweetness': '甜度',
+                                              'sauce': '醬料',
+                                              '甜度': '甜度',
+                                              '冰度': '冰度',
+                                              '醬料': '醬料'
+                                            };
+                                            const label = labelMap[key] || key;
+                                            return (
+                                              <span key={key} className="block">
+                                                {label}：{Array.isArray(values) ? values.join('、') : values}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="text-right py-1">{item.quantity}</td>
                                   <td className="text-center py-1">
@@ -1557,12 +1592,10 @@ return (
                 
                 // Check if this destination is a pickup location from order items
                 const isItemLocation = orderData?.items?.some(item => 
-                  item.location === dest.name ||
-                  (dest.name.includes('家樂福') && item.location?.includes('家樂福'))
+                  item.location === dest.name
                 ) || orders.some(order => 
                   order.items?.some(item => 
-                    item.location === dest.name ||
-                    (dest.name.includes('家樂福') && item.location?.includes('家樂福'))
+                    item.location === dest.name
                   )
                 );
 

@@ -38,12 +38,6 @@ export default async (phase) => {
       remotePatterns: [
         {
           protocol: "https",
-          hostname: "online.carrefour.com.tw",
-          port: "",
-          pathname: "/**",
-        },
-        {
-          protocol: "https",
           hostname: "www.cloudtrib.site",
           port: "",
           pathname: "/**",

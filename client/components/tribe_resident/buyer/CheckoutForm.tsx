@@ -209,7 +209,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
         price: item.price,
         quantity: item.quantity,
         img: item.img,
-        location: item.location || "家樂福",
+        location: item.location || "未指定地點",
         category: item.category,
         selectedOptions: item.selectedOptions || undefined
       }))
