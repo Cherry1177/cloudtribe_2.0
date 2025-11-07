@@ -298,10 +298,12 @@ async def get_driver_orders(driver_id: int, conn: Connection = Depends(get_db)):
                 "timestamp": order[20]
             }
             # Retrieve order items
-            cur.execute("SELECT item_id, item_name, price, quantity, img, location, category FROM order_items WHERE order_id = %s", (order[0],))
+            cur.execute("SELECT item_id, item_name, price, quantity, img, location, category, selected_options FROM order_items WHERE order_id = %s", (order[0],))
             items = cur.fetchall()
-            order_dict["items"] = [
-                {
+            # Parse selectedOptions from JSON if present
+            parsed_items = []
+            for item in items:
+                item_dict = {
                     "item_id": item[0],
                     "item_name": item[1],
                     "price": item[2],
@@ -310,8 +312,14 @@ async def get_driver_orders(driver_id: int, conn: Connection = Depends(get_db)):
                     "location": item[5],
                     "category": item[6]
                 }
-                for item in items
-            ]
+                # Parse selected_options JSON if present (item[7] is the selected_options column)
+                if len(item) > 7 and item[7] is not None:
+                    try:
+                        item_dict["selectedOptions"] = json.loads(item[7]) if isinstance(item[7], str) else item[7]
+                    except (json.JSONDecodeError, TypeError):
+                        item_dict["selectedOptions"] = None
+                parsed_items.append(item_dict)
+            order_dict["items"] = parsed_items
             order_list.append(order_dict)
 
         #add

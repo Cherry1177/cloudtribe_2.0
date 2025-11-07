@@ -615,6 +615,28 @@ const OrderCard: React.FC<{
                                         <span className="block font-semibold text-black truncate" style={{ maxWidth: '20rem' }}>
                                             地點: {item.location || '未命名'}
                                         </span>
+                                        {/* Display customization options */}
+                                        {item.selectedOptions && Object.keys(item.selectedOptions).length > 0 && (
+                                            <div className="mt-1 text-xs text-gray-600">
+                                                {Object.entries(item.selectedOptions).map(([key, values]) => {
+                                                    if (!values || values.length === 0) return null;
+                                                    const labelMap: Record<string, string> = {
+                                                        'ice': '冰度',
+                                                        'sweetness': '甜度',
+                                                        'sauce': '醬料',
+                                                        '甜度': '甜度',
+                                                        '冰度': '冰度',
+                                                        '醬料': '醬料'
+                                                    };
+                                                    const label = labelMap[key] || key;
+                                                    return (
+                                                        <span key={key} className="block">
+                                                            {label}：{Array.isArray(values) ? values.join('、') : values}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                         <span className="block">- {item.price} 元 x {item.quantity} = {item.quantity * item.price} 元</span>
                                     </div>
                                 </div>

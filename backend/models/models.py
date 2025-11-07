@@ -5,7 +5,7 @@ It includes models for Order, OrderItem, User, Driver, and DriverOrder.
 These models help in validating and serializing the data exchanged between the API and the database.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -17,6 +17,7 @@ class OrderItem(BaseModel):
     img: str
     location: Optional[str] = '家樂福'
     category: Optional[str] = '未分類'
+    selectedOptions: Optional[Dict[str, List[str]]] = None
 
 class Order(BaseModel):
     id: Optional[int] = None 

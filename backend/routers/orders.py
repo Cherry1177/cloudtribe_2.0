@@ -107,10 +107,16 @@ async def create_order(order: DetailedOrder, conn: Connection = Depends(get_db),
         )
         order_id = cur.fetchone()[0]
         for item in order.items:
+            # Convert selectedOptions to JSON string if present
+            selected_options_json = None
+            if item.selectedOptions:
+                import json
+                selected_options_json = json.dumps(item.selectedOptions)
+            
             cur.execute(
-                "INSERT INTO order_items (order_id, item_id, item_name, price, quantity, img, location, category) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (order_id, item.item_id, item.item_name, item.price, item.quantity, item.img, item.location, item.category)
+                "INSERT INTO order_items (order_id, item_id, item_name, price, quantity, img, location, category, selected_options) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (order_id, item.item_id, item.item_name, item.price, item.quantity, item.img, item.location, item.category, selected_options_json)
             )
         conn.commit()
         order.id = order_id
@@ -351,6 +357,27 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
         for order in orders:
             cur.execute("SELECT * FROM order_items WHERE order_id = %s", (order[0],))
             items = cur.fetchall()
+            # Parse selectedOptions from JSON if present
+            parsed_items = []
+            for item in items:
+                item_dict = {
+                    #"order_id": item[1], 
+                    "item_id": item[2], 
+                    "item_name": item[3], 
+                    "price": float(item[4]), 
+                    "quantity": int(item[5]), 
+                    "img": str(item[6]), 
+                    "location": str(item[7]),
+                    "category": str(item[8])
+                }
+                # Parse selected_options JSON if present (item[9] is the selected_options column)
+                if len(item) > 9 and item[9] is not None:
+                    try:
+                        item_dict["selectedOptions"] = json.loads(item[9]) if isinstance(item[9], str) else item[9]
+                    except (json.JSONDecodeError, TypeError):
+                        item_dict["selectedOptions"] = None
+                parsed_items.append(item_dict)
+            
             order_list.append({
                 "id": order[0],
                 "buyer_id": order[1],
@@ -364,15 +391,7 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
                 "note": order[9],
                 "timestamp": order[10].isoformat() if order[10] else None,
                 "service":'necessities',
-                "items": [{
-                    #"order_id": item[1], 
-                    "item_id": item[2], 
-                    "item_name": item[3], 
-                    "price": float(item[4]), 
-                    "quantity": int(item[5]), 
-                    "img": str(item[6]), 
-                    "location": str(item[7]),
-                    "category":str(item[8])} for item in items]  
+                "items": parsed_items
             })
         # Add agricultural_product orders (only unaccepted ones)
         cur.execute("""
@@ -1201,6 +1220,27 @@ async def get_order(order_id: int, conn: Connection = Depends(get_db), request: 
             if order:
                 cur.execute("SELECT * FROM order_items WHERE order_id = %s", (order_id,))
                 items = cur.fetchall()
+                
+                # Parse selectedOptions from JSON if present
+                parsed_items = []
+                for item in items:
+                    item_dict = {
+                        "order_id": item[1], 
+                        "item_id": item[2], 
+                        "item_name": item[3], 
+                        "price": float(item[4]), 
+                        "quantity": int(item[5]), 
+                        "img": str(item[6]),
+                        "location": str(item[7]),
+                        "category": str(item[8])
+                    }
+                    # Parse selected_options JSON if present (item[9] is the selected_options column)
+                    if len(item) > 9 and item[9] is not None:
+                        try:
+                            item_dict["selectedOptions"] = json.loads(item[9]) if isinstance(item[9], str) else item[9]
+                        except (json.JSONDecodeError, TypeError):
+                            item_dict["selectedOptions"] = None
+                    parsed_items.append(item_dict)
 
                 order_data = {
                     "id": order[0],
@@ -1224,8 +1264,7 @@ async def get_order(order_id: int, conn: Connection = Depends(get_db), request: 
                     "previous_driver_name": order[18],
                     "previous_driver_phone": order[19],
                     "service": "necessities",
-                    "items": [{"order_id": item[1], "item_id": item[2], "item_name": item[3], "price": float(item[4]), "quantity": int(item[5]), 
-                               "img": str(item[6]),"location": str(item[7]),"category":str(item[8])} for item in items]
+                    "items": parsed_items
                 }
             else:
                 # If not in orders table, try agricultural_product_order as fallback
@@ -1540,8 +1579,28 @@ async def get_buyer_orders(buyer_id: int, conn: Connection = Depends(get_db)):
         orders = cur.fetchall()
         for order in orders:
             # Get order items
-            cur.execute("SELECT item_id, item_name, price, quantity, img, location, category FROM order_items WHERE order_id = %s", (order[0],))
+            cur.execute("SELECT item_id, item_name, price, quantity, img, location, category, selected_options FROM order_items WHERE order_id = %s", (order[0],))
             items = cur.fetchall()
+            
+            # Parse selectedOptions from JSON if present
+            parsed_items = []
+            for item in items:
+                item_dict = {
+                    "item_id": item[0],
+                    "item_name": item[1],
+                    "price": float(item[2]),
+                    "quantity": int(item[3]),
+                    "img": item[4],
+                    "location": item[5],
+                    "category": item[6]
+                }
+                # Parse selected_options JSON if present (item[7] is the selected_options column)
+                if len(item) > 7 and item[7] is not None:
+                    try:
+                        item_dict["selectedOptions"] = json.loads(item[7]) if isinstance(item[7], str) else item[7]
+                    except (json.JSONDecodeError, TypeError):
+                        item_dict["selectedOptions"] = None
+                parsed_items.append(item_dict)
             
             order_dict = {
                 "id": order[0],
@@ -1556,15 +1615,7 @@ async def get_buyer_orders(buyer_id: int, conn: Connection = Depends(get_db)):
                 "note": order[9],
                 "timestamp": order[10].isoformat() if order[10] else None,
                 "service": "necessities",
-                "items": [{
-                    "item_id": item[0],
-                    "item_name": item[1],
-                    "price": float(item[2]),
-                    "quantity": int(item[3]),
-                    "img": item[4],
-                    "location": item[5],
-                    "category": item[6]
-                } for item in items]
+                "items": parsed_items
             }
             order_list.append(order_dict)
         

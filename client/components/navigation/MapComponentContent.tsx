@@ -537,9 +537,10 @@ const MapComponentContent: React.FC = () => {
       }
 
       // Only populate if we have just the destination (length === 1) or if we haven't populated for this order yet
-      // If destinations.length > 1, it means waypoints were added from other sources, so skip
-      if (destinations.length > 1) {
-        console.log('Waypoints already exist (possibly from other sources), skipping auto-population');
+      // If destinations.length > 1 and we haven't populated for this order, still try to populate (might be from URL params)
+      // But skip if we already populated for this specific order
+      if (destinations.length > 1 && pickupPointsPopulatedRef.current === orderData.id) {
+        console.log('Waypoints already exist and already populated for this order, skipping auto-population');
         return;
       }
 
@@ -1547,14 +1548,19 @@ return (
           {/* Destinations List with Move Buttons and Distance/Time */}
           <div className="my-5">
             <h2 className="text-lg font-bold mb-2">訂單地點(起點是目前位置)</h2>
-            <ul className="space-y-2">
-              {destinations.slice(0, -1).map((dest, index) => {
+            {destinations.length > 1 ? (
+              <ul className="space-y-2">
+                {destinations.slice(0, -1).map((dest, index) => {
                 const isOrderLocation = orders.some(order => 
                   order.location === dest.name
                 );
                 
-                const isItemLocation = orders.some(order => 
-                  order.items.some(item => 
+                // Check if this destination is a pickup location from order items
+                const isItemLocation = orderData?.items?.some(item => 
+                  item.location === dest.name ||
+                  (dest.name.includes('家樂福') && item.location?.includes('家樂福'))
+                ) || orders.some(order => 
+                  order.items?.some(item => 
                     item.location === dest.name ||
                     (dest.name.includes('家樂福') && item.location?.includes('家樂福'))
                   )
@@ -1639,7 +1645,37 @@ return (
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            ) : (
+              <div className="p-4 border rounded-md bg-gray-50">
+                <p className="text-gray-600 text-sm">
+                  {orderData && orderData.items && orderData.items.length > 0 ? (
+                    <>
+                      <span className="font-semibold">正在載入取貨地點...</span>
+                      <br />
+                      <span className="text-xs mt-1 block">
+                        從訂單商品中提取取貨地點: {
+                          (() => {
+                            const locations = orderData.items
+                              .map(item => item.location)
+                              .filter((loc, idx, arr) => arr.indexOf(loc) === idx)
+                              .filter(loc => loc && loc.trim() && loc.trim() !== 'undefined');
+                            return locations.length > 0 ? locations.join(', ') : '無';
+                          })()
+                        }
+                      </span>
+                      {orderData.items.some(item => item.location && item.location.trim() && item.location.trim() !== 'undefined') && (
+                        <span className="text-xs mt-1 block text-blue-600">
+                          💡 提示: 取貨地點將自動加入導航路線
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span>目前沒有取貨地點。請確認訂單包含商品資訊。</span>
+                  )}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Show the terminal */}

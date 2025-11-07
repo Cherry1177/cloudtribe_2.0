@@ -294,6 +294,28 @@ const BuyerOrderCard: React.FC<{
                   <p className="text-xs text-gray-600">
                     取貨地點: {item.location || '未命名'}
                   </p>
+                  {/* Display customization options */}
+                  {item.selectedOptions && Object.keys(item.selectedOptions).length > 0 && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      {Object.entries(item.selectedOptions).map(([key, values]) => {
+                        if (!values || values.length === 0) return null;
+                        const labelMap: Record<string, string> = {
+                          'ice': '冰度',
+                          'sweetness': '甜度',
+                          'sauce': '醬料',
+                          '甜度': '甜度',
+                          '冰度': '冰度',
+                          '醬料': '醬料'
+                        };
+                        const label = labelMap[key] || key;
+                        return (
+                          <span key={key} className="block">
+                            {label}：{Array.isArray(values) ? values.join('、') : values}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                   <p className="text-xs text-green-600 font-medium">
                     ${item.price} × {item.quantity} = ${item.quantity * item.price}
                   </p>

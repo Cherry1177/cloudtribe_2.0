@@ -36,4 +36,5 @@ export interface OrderItem {
     img: string;
     location?: string; 
     category?: string;
+    selectedOptions?: Record<string, string[]>;
 }
