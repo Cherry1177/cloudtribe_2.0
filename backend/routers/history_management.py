@@ -70,6 +70,8 @@ async def export_driver_history(driver_id: int, format: str = "excel"):
         cursor = conn.cursor()
         
         # Get driver's completed orders
+        # Use subquery to get the most recent driver_orders entry for each order
+        # This ensures we get all completed orders even if there are multiple driver_orders entries
         query = """
         SELECT 
             o.id as order_id,
@@ -82,8 +84,14 @@ async def export_driver_history(driver_id: int, format: str = "excel"):
             'store' as order_type
         FROM orders o
         JOIN users u ON o.buyer_id = u.id
-        JOIN driver_orders dro ON o.id = dro.order_id AND dro.service = 'necessities'
-        WHERE dro.driver_id = %s AND o.order_status = '已送達'
+        WHERE o.order_status = '已送達'
+        AND EXISTS (
+            SELECT 1 
+            FROM driver_orders dro 
+            WHERE dro.order_id = o.id 
+            AND dro.service = 'necessities' 
+            AND dro.driver_id = %s
+        )
         
         UNION ALL
         
@@ -99,8 +107,14 @@ async def export_driver_history(driver_id: int, format: str = "excel"):
         FROM agricultural_product_order apo
         JOIN agricultural_produce ap ON apo.produce_id = ap.id
         JOIN users u ON apo.buyer_id = u.id
-        JOIN driver_orders dro ON apo.id = dro.order_id AND dro.service = 'agricultural_product'
-        WHERE dro.driver_id = %s AND apo.status = '已送達'
+        WHERE apo.status = '已送達'
+        AND EXISTS (
+            SELECT 1 
+            FROM driver_orders dro 
+            WHERE dro.order_id = apo.id 
+            AND dro.service = 'agricultural_product' 
+            AND dro.driver_id = %s
+        )
         
         ORDER BY timestamp DESC
         """
