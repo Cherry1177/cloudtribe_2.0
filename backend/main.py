@@ -6,6 +6,7 @@ Description: FastAPI backend for CloudTribe convenience economy platform
 """
 import logging
 import os
+from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -39,7 +40,7 @@ from .handlers.customer_service import handle_customer_service
 from .handlers.send_message import LineMessageService
 
 # Import database connection function
-from backend.database import get_db_connection
+from backend.database import get_db_connection, init_connection_pool, close_connection_pool
 
 
 from pathlib import Path
@@ -111,6 +112,50 @@ line_message_service = LineMessageService()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Global exception handler to prevent crashes
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler to catch all unhandled exceptions
+    and prevent the application from crashing.
+    """
+    logger.error(f"Unhandled exception: {type(exc).__name__}: {str(exc)}", exc_info=True)
+    return {
+        "error": "Internal server error",
+        "message": "An unexpected error occurred. Please try again later.",
+        "status_code": 500
+    }
+
+# Startup event handler
+@app.on_event("startup")
+async def startup_event():
+    """
+    Initialize resources on application startup.
+    """
+    logger.info("🚀 CloudTribe Backend API Server starting up...")
+    try:
+        # Initialize database connection pool
+        init_connection_pool()
+        logger.info(f"📡 Server running on port 8001")
+        logger.info("✅ Startup complete")
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {str(e)}")
+        raise
+
+# Shutdown event handler
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Cleanup resources on application shutdown.
+    """
+    logger.info("🛑 CloudTribe Backend API Server shutting down...")
+    try:
+        # Close database connection pool
+        close_connection_pool()
+        logger.info("✅ Shutdown complete")
+    except Exception as e:
+        logger.error(f"❌ Error during shutdown: {str(e)}")
 
 
 
@@ -333,3 +378,33 @@ async def root():
     - dict: A message indicating that the server is running.
     """
     return {"message": "Server is running"}
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint for monitoring and load balancers.
+    
+    Returns:
+    - dict: Health status of the server and database.
+    """
+    try:
+        # Check database connection
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            cur.close()
+            db_status = "healthy"
+        finally:
+            from backend.database import return_db_connection
+            return_db_connection(conn)
+    except Exception as e:
+        logger.error(f"Database health check failed: {str(e)}")
+        db_status = "unhealthy"
+    
+    return {
+        "status": "healthy" if db_status == "healthy" else "degraded",
+        "database": db_status,
+        "timestamp": datetime.now().isoformat()
+    }
