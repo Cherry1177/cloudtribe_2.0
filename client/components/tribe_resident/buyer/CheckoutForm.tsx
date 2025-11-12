@@ -57,6 +57,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
   const [note, setNote] = useState<string>("");
   const [showAlert, setShowAlert] = useState(false);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [isManualInput, setIsManualInput] = useState(true);
   const [showLocationSearch, setShowLocationSearch] = useState(false);
@@ -153,6 +154,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
   };
 
   const handleSubmit = async () => {
+    // Prevent double submission
+    if (isSubmitting) {
+      return;
+    }
+
     setError("");
 
     if (!/^[\u4e00-\u9fa5a-zA-Z]+$/.test(name)) {
@@ -179,6 +185,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
       setError(`每筆訂單最多只能訂購 ${MAX_PRODUCTS_PER_ORDER} 個商品。您目前選擇了 ${totalQuantity} 個商品，請減少數量。`);
       return;
     }
+
+    setIsSubmitting(true);
 
     const user = UserService.getLocalStorageUser();
 
@@ -248,6 +256,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
       // Show the error message from backend if available, otherwise show generic message
       const errorMessage = error?.message || '提交訂單時出錯';
       setError(errorMessage);
+      setIsSubmitting(false); // Re-enable button on error
     }
   };
 
@@ -348,7 +357,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
             </div>
           </div>
           <SheetFooter>
-            <Button className="bg-black text-white" onClick={handleSubmit}>提交</Button>
+            <Button 
+              className="bg-black text-white" 
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? '提交中...' : '提交'}
+            </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
@@ -454,7 +469,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
             </div>
           </div>
           <SheetFooter>
-            <Button className="bg-black text-white" onClick={handleSubmit}>提交</Button>
+            <Button 
+              className="bg-black text-white" 
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? '提交中...' : '提交'}
+            </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>

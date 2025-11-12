@@ -160,6 +160,43 @@ async def create_order(order: DetailedOrder, conn: Connection = Depends(get_db),
             "endpoint": str(request.url) if request else "N/A",
             "client_ip": request.client.host if request else "N/A"
         })
+        
+        # Check for duplicate orders (same buyer, same items, within last 5 seconds)
+        # This prevents accidental double-submission
+        duplicate_check_query = """
+        SELECT id FROM orders 
+        WHERE buyer_id = %s 
+        AND total_price = %s 
+        AND location = %s 
+        AND timestamp > NOW() - INTERVAL '5 seconds'
+        AND order_status = '未接單'
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """
+        cur.execute(duplicate_check_query, (order.buyer_id, order.total_price, order.location))
+        duplicate_order = cur.fetchone()
+        
+        if duplicate_order:
+            duplicate_id = duplicate_order[0]
+            log_event("DUPLICATE_ORDER_PREVENTED", {
+                "buyer_id": order.buyer_id,
+                "duplicate_order_id": duplicate_id,
+                "new_order_attempt": True
+            })
+            # Return the existing order instead of creating a duplicate
+            cur.execute("""
+                SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price,
+                       order_type, order_status, note, timestamp
+                FROM orders WHERE id = %s
+            """, (duplicate_id,))
+            existing_order = cur.fetchone()
+            if existing_order:
+                # Get order items
+                cur.execute("SELECT item_id, item_name, price, quantity, img, location, category, selected_options FROM order_items WHERE order_id = %s", (duplicate_id,))
+                items = cur.fetchall()
+                # Return existing order
+                order.id = duplicate_id
+                return order
             
         cur.execute(
             "INSERT INTO orders (buyer_id, buyer_name, buyer_phone, seller_id, seller_name, seller_phone, date, time, location, is_urgent, total_price, order_type, order_status, note, shipment_count, required_orders_count, previous_driver_id, previous_driver_name, previous_driver_phone) "
