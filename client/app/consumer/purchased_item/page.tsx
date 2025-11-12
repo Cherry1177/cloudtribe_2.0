@@ -2,8 +2,9 @@ import PurchasedItemContent from './PurchasedItemContent'
 
 type Search = { tab?: string | string[] };
 
-export default function Page({ searchParams }: { searchParams: Search }) {
-  const tabParam = searchParams?.tab;
+export default async function Page({ searchParams }: { searchParams: Promise<Search> }) {
+  const params = await searchParams;
+  const tabParam = params?.tab;
   const tab = Array.isArray(tabParam) ? tabParam[0] : (tabParam ?? undefined);
   const initialTab = tab === 'pending' ? 'pending' : 'all';
 
