@@ -14,7 +14,7 @@ Endpoints:
 from fastapi import APIRouter, HTTPException, Depends
 from psycopg2.extensions import connection as Connection
 from backend.models.consumer import ProductInfo, AddCartRequest, CartItem, UpdateCartQuantityRequest, PurchaseProductRequest, PurchasedProduct
-from backend.database import get_db_connection
+from backend.database import get_db_connection, return_db_connection
 from backend.handlers.send_message import LineMessageService
 import logging
 import json
@@ -128,7 +128,7 @@ def get_db():
     try:
         yield conn
     finally:
-        conn.close()
+        return_db_connection(conn)
 @router.get('/', response_model=List[ProductInfo])
 async def get_on_sell_item(conn: Connection=Depends(get_db)):
     """

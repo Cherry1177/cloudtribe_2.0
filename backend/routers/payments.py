@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Header
 from pydantic import BaseModel
 from typing import Literal, Optional
 import os
-from backend.database import get_db_connection
+from backend.database import get_db_connection, return_db_connection
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -19,7 +19,9 @@ class CreatePaymentIntentIn(BaseModel):
 
 @router.post("/intent")
 def create_payment_intent(payload: CreatePaymentIntentIn):
-    with get_db_connection() as conn:
+    conn = None
+    try:
+        conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT id, payment_status FROM orders WHERE id=%s", (payload.order_id,))
         row = cur.fetchone()
@@ -38,13 +40,25 @@ def create_payment_intent(payload: CreatePaymentIntentIn):
         """, (payload.order_id, payload.method, payload.amount, payload.currency, status))
         pid, st = cur.fetchone()
         conn.commit()
+        cur.close()
         return {"payment_id": pid, "status": st}
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(500, f"Error creating payment intent: {str(e)}")
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @router.post("/{payment_id}/proof")
 def upload_payment_proof(payment_id: int, image: UploadFile = File(...), note: str = "", uploaded_by: Optional[int] = None):
     # TODO: 換成你們的實際檔案儲存流程；此處暫存檔名
     image_url = f"/uploads/{payment_id}_{image.filename}"
-    with get_db_connection() as conn:
+    conn = None
+    try:
+        conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT status FROM payments WHERE id=%s", (payment_id,))
         row = cur.fetchone()
@@ -57,7 +71,17 @@ def upload_payment_proof(payment_id: int, image: UploadFile = File(...), note: s
                        VALUES (%s,%s,%s,%s)""",
                     (payment_id, image_url, note, uploaded_by))
         conn.commit()
+        cur.close()
         return {"ok": True, "image_url": image_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(500, f"Error uploading payment proof: {str(e)}")
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 class VerifyIn(BaseModel):
     approve: bool
@@ -68,7 +92,9 @@ def verify_payment(payment_id: int, body: VerifyIn, x_admin_key: Optional[str] =
     if x_admin_key != os.getenv("ADMIN_API_KEY"):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    with get_db_connection() as conn:
+    conn = None
+    try:
+        conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT order_id, amount, currency, status FROM payments WHERE id=%s", (payment_id,))
         p = cur.fetchone()
@@ -87,4 +113,14 @@ def verify_payment(payment_id: int, body: VerifyIn, x_admin_key: Optional[str] =
         else:
             cur.execute("UPDATE payments SET status='REJECTED', updated_at=NOW() WHERE id=%s", (payment_id,))
         conn.commit()
+        cur.close()
         return {"status": "PAID_ESCROW" if body.approve else "REJECTED"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(500, f"Error verifying payment: {str(e)}")
+    finally:
+        if conn:
+            return_db_connection(conn)

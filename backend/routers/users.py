@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from psycopg2.extensions import connection as Connection
 from backend.models.user import User, UpdateLocationRequest, LineBindingRequest
-from backend.database import get_db_connection
+from backend.database import get_db_connection, return_db_connection
 import logging
 import json
 from datetime import datetime
@@ -66,7 +66,7 @@ def get_db():
     try:
         yield conn
     finally:
-        conn.close()
+        return_db_connection(conn)
 
 @router.post("/login", response_model=User)
 async def login(request: LoginRequest, conn: Connection = Depends(get_db)):

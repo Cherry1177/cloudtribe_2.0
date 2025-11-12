@@ -23,7 +23,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from psycopg2.extensions import connection as Connection
 from backend.models.models import Driver
 from backend.models.models import DriverTime, DriverTimeDetail
-from backend.database import get_db_connection
+from backend.database import get_db_connection, return_db_connection
 from typing import List
 import os 
 
@@ -60,7 +60,7 @@ def get_db():
     try:
         yield conn
     finally:
-        conn.close()
+        return_db_connection(conn)
 
 @router.post("/")
 async def create_driver(driver: Driver, conn: Connection = Depends(get_db)):

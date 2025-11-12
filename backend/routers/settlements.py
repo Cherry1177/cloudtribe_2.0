@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Header
 from collections import defaultdict
 from datetime import datetime
 import pytz, os
-from backend.database import get_db_connection
+from backend.database import get_db_connection, return_db_connection
 
 router = APIRouter(prefix="/api/settlement", tags=["settlement"])
 TZ = pytz.timezone("Asia/Taipei")
@@ -21,7 +21,9 @@ def run_settlement(x_job_key: str | None = Header(None)):
     start = datetime.combine(today, datetime.min.time()).astimezone(TZ)
     end   = datetime.combine(today, datetime.max.time()).astimezone(TZ)
 
-    with get_db_connection() as conn:
+    conn = None
+    try:
+        conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("""
             SELECT o.id, o.driver_id, p.amount
@@ -55,4 +57,12 @@ def run_settlement(x_job_key: str | None = Header(None)):
                         (payout_id, total))
 
         conn.commit()
+        cur.close()
         return {"settled_drivers": len(sums), "total_amount": sum(sums.values())}
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(500, f"Error running settlement: {str(e)}")
+    finally:
+        if conn:
+            return_db_connection(conn)

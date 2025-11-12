@@ -40,7 +40,7 @@ from .handlers.customer_service import handle_customer_service
 from .handlers.send_message import LineMessageService
 
 # Import database connection function
-from backend.database import get_db_connection, init_connection_pool, close_connection_pool
+from backend.database import get_db_connection, init_connection_pool, close_connection_pool, return_db_connection
 
 
 from pathlib import Path
@@ -194,10 +194,13 @@ def handle_message(event):
 
         if user_message == "註冊":
             # Check if user is already registered
-            with get_db_connection() as conn:
+            conn = None
+            try:
+                conn = get_db_connection()
                 cur = conn.cursor()
                 cur.execute("SELECT id FROM users WHERE line_user_id = %s", (line_user_id,))
                 existing_binding = cur.fetchone()
+                cur.close()
 
                 if existing_binding:
                     line_bot_api.reply_message(
@@ -207,6 +210,9 @@ def handle_message(event):
                         )
                     )
                     return
+            finally:
+                if conn:
+                    return_db_connection(conn)
 
             user_states[line_user_id] = "waiting_for_name"
             line_bot_api.reply_message(
@@ -312,13 +318,23 @@ def handle_message(event):
             phone = user_states.get(f"{line_user_id}_phone")
             name = user_states.get(f"{line_user_id}_name")
             if otp_store.get(email) == code:
-                with get_db_connection() as conn:
+                conn = None
+                try:
+                    conn = get_db_connection()
                     cur = conn.cursor()
                     cur.execute(
                         "INSERT INTO users (name, phone, location, is_driver, line_user_id, email) VALUES (%s, %s, %s, %s, %s, %s)",
                         (name, phone, '未選擇', False, line_user_id, email)
                     )
                     conn.commit()
+                    cur.close()
+                except Exception as e:
+                    if conn:
+                        conn.rollback()
+                    raise
+                finally:
+                    if conn:
+                        return_db_connection(conn)
                 for key in list(user_states.keys()):
                     if line_user_id in key:
                         del user_states[key]
@@ -397,7 +413,6 @@ async def health_check():
             cur.close()
             db_status = "healthy"
         finally:
-            from backend.database import return_db_connection
             return_db_connection(conn)
     except Exception as e:
         logger.error(f"Database health check failed: {str(e)}")

@@ -19,7 +19,7 @@ from backend.handlers.send_message import LineMessageService
 from psycopg2.extensions import connection as Connection
 from fastapi import APIRouter, HTTPException, Depends, Request
 from backend.models.models import Order, DriverOrder, TransferOrderRequest, DetailedOrder, PendingTransfer, AcceptTransferRequest, CancelOrderRequest, CompleteOrderRequest
-from backend.database import get_db_connection
+from backend.database import get_db_connection, return_db_connection
 import os
 
 line_service = LineMessageService()
@@ -120,7 +120,7 @@ def get_db():
     try:
         yield conn
     finally:
-        conn.close()
+        return_db_connection(conn)
 
 @router.post("/", response_model=Order)
 async def create_order(order: DetailedOrder, conn: Connection = Depends(get_db), request: Request = None):

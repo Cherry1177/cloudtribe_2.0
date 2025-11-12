@@ -17,7 +17,7 @@ Endpoints:
 from fastapi import APIRouter, HTTPException, Depends, Request
 from psycopg2.extensions import connection as Connection
 from backend.models.seller import UploadImageResponse, UploadImageRequset, UploadItemRequest, ProductBasicInfo, ProductInfo, ProductOrderInfo, IsPutRequest, UpdateOffShelfDateRequest
-from backend.database import get_db_connection
+from backend.database import get_db_connection, return_db_connection
 from dotenv import load_dotenv
 import os
 import requests
@@ -64,7 +64,7 @@ def get_db():
     try:
         yield conn
     finally:
-        conn.close()
+        return_db_connection(conn)
 
 @router.post("/upload_image", response_model=UploadImageResponse)
 async def upload_image(request: UploadImageRequset, req: Request):

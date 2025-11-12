@@ -8,7 +8,7 @@ from linebot.v3.messaging import (
 )
 from fastapi import HTTPException
 import os
-from backend.database import get_db_connection  # Adjust the import path as necessary
+from backend.database import get_db_connection, return_db_connection  # Adjust the import path as necessary
 
 class LineMessageService:
     def __init__(self):
@@ -24,20 +24,22 @@ class LineMessageService:
         - user_id: 
         - message: 
         """
+        conn = None
         try:
             # Get LINE user ID from database
-            with get_db_connection() as conn:
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT line_user_id FROM users WHERE id = %s",
-                    (user_id,)
-                )
-                result = cur.fetchone()
-                
-                if not result or not result[0]:
-                    raise HTTPException(status_code=404, detail="User LINE ID not found")
-                
-                line_user_id = result[0]
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT line_user_id FROM users WHERE id = %s",
+                (user_id,)
+            )
+            result = cur.fetchone()
+            cur.close()
+            
+            if not result or not result[0]:
+                raise HTTPException(status_code=404, detail="User LINE ID not found")
+            
+            line_user_id = result[0]
             
             # Send message to LINE user
             with ApiClient(self.configuration) as api_client:
@@ -52,3 +54,6 @@ class LineMessageService:
         except Exception as e:
             print(f"Error sending LINE message: {str(e)}")
             return False
+        finally:
+            if conn:
+                return_db_connection(conn)

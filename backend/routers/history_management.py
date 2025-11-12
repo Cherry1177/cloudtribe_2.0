@@ -4,7 +4,7 @@ import pandas as pd
 import io
 import json
 from typing import List, Dict, Any
-from backend.database import get_db_connection
+from backend.database import get_db_connection, return_db_connection
 
 router = APIRouter()
 
@@ -14,6 +14,7 @@ async def cleanup_old_history():
     Clean up transaction history older than 3 months
     Returns count of deleted records
     """
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -47,7 +48,6 @@ async def cleanup_old_history():
         
         conn.commit()
         cursor.close()
-        conn.close()
         
         return {
             "success": True,
@@ -57,7 +57,12 @@ async def cleanup_old_history():
         }
         
     except Exception as e:
+        if conn:
+            conn.rollback()
         return {"success": False, "error": str(e)}
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @router.get("/export-driver-history/{driver_id}")
 async def export_driver_history(driver_id: int, format: str = "excel"):
@@ -65,6 +70,7 @@ async def export_driver_history(driver_id: int, format: str = "excel"):
     Export driver's transaction history
     Formats: excel, csv, json
     """
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -133,7 +139,6 @@ async def export_driver_history(driver_id: int, format: str = "excel"):
         df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
         cursor.close()
-        conn.close()
         
         if format.lower() == "excel":
             # Create Excel file
@@ -176,6 +181,9 @@ async def export_driver_history(driver_id: int, format: str = "excel"):
         raise  # Re-raise HTTPExceptions as-is
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @router.get("/export-buyer-history/{user_id}")
 async def export_buyer_history(user_id: int, format: str = "excel"):
@@ -183,6 +191,7 @@ async def export_buyer_history(user_id: int, format: str = "excel"):
     Export buyer's transaction history
     Formats: excel, csv, json
     """
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -237,7 +246,6 @@ async def export_buyer_history(user_id: int, format: str = "excel"):
         df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
         cursor.close()
-        conn.close()
         
         if format.lower() == "excel":
             # Create Excel file
@@ -280,12 +288,16 @@ async def export_buyer_history(user_id: int, format: str = "excel"):
         raise  # Re-raise HTTPExceptions as-is
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @router.get("/history-stats")
 async def get_history_stats():
     """
     Get statistics about transaction history
     """
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -350,7 +362,6 @@ async def get_history_stats():
             }
         
         cursor.close()
-        conn.close()
         
         return {
             "success": True,
@@ -360,6 +371,9 @@ async def get_history_stats():
         
     except Exception as e:
         return {"success": False, "error": str(e)}
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @router.get("/export-seller-history/{seller_id}")
 async def export_seller_history(seller_id: int, format: str = "excel"):
@@ -367,6 +381,7 @@ async def export_seller_history(seller_id: int, format: str = "excel"):
     Export seller's transaction history
     Formats: excel, csv, json
     """
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -425,7 +440,6 @@ async def export_seller_history(seller_id: int, format: str = "excel"):
         df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
         cursor.close()
-        conn.close()
         
         if format.lower() == "excel":
             # Create Excel file
@@ -468,3 +482,6 @@ async def export_seller_history(seller_id: int, format: str = "excel"):
         raise  # Re-raise HTTPExceptions as-is
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            return_db_connection(conn)
