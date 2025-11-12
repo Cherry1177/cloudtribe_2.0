@@ -107,7 +107,7 @@ export default async (phase) => {
           source: "/api/:path*",
           destination: isDev
             ? `http://${networkIP}:8000/api/:path*`
-            : "https://cloudtribe.site/api/:path*",
+            : "http://localhost:8001/api/:path*",
         },
       ];
     },
