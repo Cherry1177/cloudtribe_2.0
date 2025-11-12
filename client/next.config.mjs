@@ -102,14 +102,14 @@ export default async (phase) => {
 
       const networkIP = isDev ? getNetworkIP() : 'localhost';
       
-      return [
+      // In production, nginx handles /api/* routing
+      // In development, Next.js rewrites to backend
+      return isDev ? [
         {
           source: "/api/:path*",
-          destination: isDev
-            ? `http://${networkIP}:8000/api/:path*`
-            : "http://localhost:8001/api/:path*",
+          destination: `http://${networkIP}:8000/api/:path*`,
         },
-      ];
+      ] : [];
     },
   };
 };
