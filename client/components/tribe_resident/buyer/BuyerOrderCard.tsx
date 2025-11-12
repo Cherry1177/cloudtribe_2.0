@@ -298,7 +298,9 @@ const BuyerOrderCard: React.FC<{
                   {item.selectedOptions && Object.keys(item.selectedOptions).length > 0 && (
                     <div className="mt-1 text-xs text-gray-500">
                       {Object.entries(item.selectedOptions).map(([key, values]) => {
-                        if (!values || values.length === 0) return null;
+                        // Check if values is empty (handles both array and string cases)
+                        const isEmpty = !values || (Array.isArray(values) && values.length === 0) || (typeof values === 'string' && values.trim().length === 0);
+                        if (isEmpty) return null;
                         const labelMap: Record<string, string> = {
                           'ice': '冰度',
                           'sweetness': '甜度',
