@@ -189,6 +189,20 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
     setIsSubmitting(true);
 
     const user = UserService.getLocalStorageUser();
+    
+    // Validate user exists
+    if (!user || !user.id || user.id === 0) {
+      setError("請先登入後再提交訂單");
+      setIsSubmitting(false);
+      return;
+    }
+    
+    // Validate cart is not empty
+    if (!cartItems || cartItems.length === 0) {
+      setError("購物車是空的，無法提交訂單");
+      setIsSubmitting(false);
+      return;
+    }
 
     const orderData = {
       buyer_id: user.id,       
@@ -600,7 +614,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ onClose, clearCart, cartIte
           </div>
         </div>
         <SheetFooter>
-          <Button className="bg-black text-white" onClick={handleSubmit}>提交</Button>
+          <Button 
+            className="bg-black text-white" 
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? '提交中...' : '提交'}
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

@@ -453,54 +453,66 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
                 "during": "fetch_orders"
             })
         
-        # Then fetch all unaccepted orders (excluding expired ones for drivers)
+        # Then fetch all unaccepted orders with their items using JOIN (fixes N+1 query problem)
+        # This single query replaces the loop with individual queries, dramatically improving performance
         cur.execute("""
-            SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price, 
-                order_type, order_status, note, timestamp
-            FROM orders
-            WHERE order_status = '未接單'
+            SELECT 
+                o.id, o.buyer_id, o.buyer_name, o.buyer_phone, o.location, o.is_urgent, 
+                o.total_price, o.order_type, o.order_status, o.note, o.timestamp,
+                oi.id as item_id, oi.item_id as item_product_id, oi.item_name, oi.price, 
+                oi.quantity, oi.img, oi.location as item_location, oi.category,
+                COALESCE(oi.selected_options, 'null') as selected_options
+            FROM orders o
+            LEFT JOIN order_items oi ON o.id = oi.order_id
+            WHERE o.order_status = '未接單'
+            ORDER BY o.id, oi.id
         """)
-        orders = cur.fetchall()
-        order_list = []
-        for order in orders:
-            cur.execute("SELECT * FROM order_items WHERE order_id = %s", (order[0],))
-            items = cur.fetchall()
-            # Parse selectedOptions from JSON if present
-            parsed_items = []
-            for item in items:
-                item_dict = {
-                    #"order_id": item[1], 
-                    "item_id": item[2], 
-                    "item_name": item[3], 
-                    "price": float(item[4]), 
-                    "quantity": int(item[5]), 
-                    "img": str(item[6]), 
-                    "location": str(item[7]),
-                    "category": str(item[8])
+        rows = cur.fetchall()
+        
+        # Group items by order_id
+        order_dict = {}
+        for row in rows:
+            order_id = row[0]
+            if order_id not in order_dict:
+                order_dict[order_id] = {
+                    "id": row[0],
+                    "buyer_id": row[1],
+                    "buyer_name": row[2], 
+                    "buyer_phone": row[3], 
+                    "location": row[4],
+                    "is_urgent": bool(row[5]),  
+                    "total_price": float(row[6]),  
+                    "order_type": row[7],
+                    "order_status": row[8],
+                    "note": row[9],
+                    "timestamp": row[10].isoformat() if row[10] else None,
+                    "service": 'necessities',
+                    "items": []
                 }
-                # Parse selected_options JSON if present (item[9] is the selected_options column)
-                if len(item) > 9 and item[9] is not None:
+            
+            # Add item if it exists (LEFT JOIN may return NULL for orders without items)
+            if row[11] is not None:  # item_id is not NULL
+                item_dict = {
+                    "item_id": str(row[12]) if row[12] else "", 
+                    "item_name": row[13] if row[13] else "", 
+                    "price": float(row[14]) if row[14] else 0.0, 
+                    "quantity": int(row[15]) if row[15] else 0, 
+                    "img": str(row[16]) if row[16] else "", 
+                    "location": str(row[17]) if row[17] else "",
+                    "category": str(row[18]) if row[18] else ""
+                }
+                # Parse selected_options JSON if present
+                if row[19] and row[19] != 'null':
                     try:
-                        item_dict["selectedOptions"] = json.loads(item[9]) if isinstance(item[9], str) else item[9]
+                        item_dict["selectedOptions"] = json.loads(row[19]) if isinstance(row[19], str) else row[19]
                     except (json.JSONDecodeError, TypeError):
                         item_dict["selectedOptions"] = None
-                parsed_items.append(item_dict)
-            
-            order_list.append({
-                "id": order[0],
-                "buyer_id": order[1],
-                "buyer_name": order[2], 
-                "buyer_phone": order[3], 
-                "location": order[4],
-                "is_urgent": bool(order[5]),  
-                "total_price": float(order[6]),  
-                "order_type": order[7],
-                "order_status": order[8],
-                "note": order[9],
-                "timestamp": order[10].isoformat() if order[10] else None,
-                "service":'necessities',
-                "items": parsed_items
-            })
+                else:
+                    item_dict["selectedOptions"] = None
+                
+                order_dict[order_id]["items"].append(item_dict)
+        
+        order_list = list(order_dict.values())
         # Add agricultural_product orders (only unaccepted ones)
         cur.execute("""
             SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone, agri_p_o.end_point, agri_p_o.status, agri_p_o.note, 

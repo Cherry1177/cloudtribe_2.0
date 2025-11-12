@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'fastapi-app',
       script: 'venv/bin/uvicorn',
-      args: 'backend.main:app --host 0.0.0.0 --port 8001',
+      args: 'backend.main:app --host 0.0.0.0 --port 8001 --timeout-keep-alive 75 --timeout-graceful-shutdown 10',
       interpreter: 'venv/bin/python3',
       cwd: '/home/ubuntu/cloudtribe-2.0',
       instances: 1,

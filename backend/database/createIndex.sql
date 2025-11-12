@@ -21,6 +21,9 @@ CREATE INDEX idx_driver_time_date ON driver_time (date);
 -- Indexes for orders table
 -- ====================================
 CREATE INDEX idx_orders_buyer_id ON orders (buyer_id);
+CREATE INDEX idx_orders_order_status ON orders (order_status);
+CREATE INDEX idx_orders_timestamp ON orders (timestamp);
+CREATE INDEX idx_orders_status_timestamp ON orders (order_status, timestamp);
 
 -- ====================================
 -- Indexes for order_items table
@@ -36,5 +39,12 @@ CREATE INDEX idx_driver_orders_driver_id ON driver_orders (driver_id);
 CREATE INDEX idx_driver_orders_order_id ON driver_orders (order_id);
 CREATE INDEX idx_driver_orders_timestamp ON driver_orders (timestamp);
 CREATE INDEX idx_driver_orders_driver_order ON driver_orders (driver_id, order_id);
+
+-- ====================================
+-- Indexes for agricultural_product_order table
+-- ====================================
+CREATE INDEX idx_agri_order_status ON agricultural_product_order (status);
+CREATE INDEX idx_agri_order_timestamp ON agricultural_product_order (timestamp);
+CREATE INDEX idx_agri_order_status_timestamp ON agricultural_product_order (status, timestamp);
 
 
