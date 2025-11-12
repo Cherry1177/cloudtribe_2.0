@@ -11,7 +11,8 @@ router = APIRouter()
 @router.post("/cleanup-old-history")
 async def cleanup_old_history():
     """
-    Clean up transaction history older than 3 months
+    Clean up transaction history older than 3 months (completed orders)
+    Also cleans up cancelled orders older than 180 days (6 months)
     Returns count of deleted records
     """
     conn = None
@@ -19,11 +20,15 @@ async def cleanup_old_history():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Calculate cutoff date (3 months ago)
+        # Calculate cutoff date for completed orders (3 months ago)
         cutoff_date = datetime.now() - timedelta(days=90)
         cutoff_str = cutoff_date.strftime('%Y-%m-%d %H:%M:%S')
         
-        # Count records to be deleted
+        # Calculate cutoff date for cancelled orders (180 days / 6 months ago)
+        cancelled_cutoff_date = datetime.now() - timedelta(days=180)
+        cancelled_cutoff_str = cancelled_cutoff_date.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Count records to be deleted (completed orders)
         count_query = """
         SELECT 
             (SELECT COUNT(*) FROM orders WHERE timestamp < %s AND order_status = '已送達') +
@@ -31,6 +36,15 @@ async def cleanup_old_history():
         """
         cursor.execute(count_query, (cutoff_str, cutoff_str))
         total_count = cursor.fetchone()[0]
+        
+        # Count cancelled orders to be deleted
+        cancelled_count_query = """
+        SELECT 
+            (SELECT COUNT(*) FROM orders WHERE timestamp < %s AND order_status = '已取消') +
+            (SELECT COUNT(*) FROM agricultural_product_order WHERE timestamp < %s AND status = '已取消') as cancelled_count
+        """
+        cursor.execute(cancelled_count_query, (cancelled_cutoff_str, cancelled_cutoff_str))
+        cancelled_count = cursor.fetchone()[0]
         
         # Delete old completed orders
         delete_orders_query = """
@@ -46,14 +60,31 @@ async def cleanup_old_history():
         """
         cursor.execute(delete_agri_query, (cutoff_str,))
         
+        # Delete old cancelled orders (180 days old)
+        delete_cancelled_orders_query = """
+        DELETE FROM orders 
+        WHERE timestamp < %s AND order_status = '已取消'
+        """
+        cursor.execute(delete_cancelled_orders_query, (cancelled_cutoff_str,))
+        
+        # Delete old cancelled agricultural orders
+        delete_cancelled_agri_query = """
+        DELETE FROM agricultural_product_order 
+        WHERE timestamp < %s AND status = '已取消'
+        """
+        cursor.execute(delete_cancelled_agri_query, (cancelled_cutoff_str,))
+        
         conn.commit()
         cursor.close()
         
         return {
             "success": True,
-            "deleted_count": total_count,
-            "cutoff_date": cutoff_str,
-            "message": f"Successfully deleted {total_count} old transaction records"
+            "deleted_completed": total_count,
+            "deleted_cancelled": cancelled_count,
+            "total_deleted": total_count + cancelled_count,
+            "cutoff_date_completed": cutoff_str,
+            "cutoff_date_cancelled": cancelled_cutoff_str,
+            "message": f"Successfully deleted {total_count} completed orders (90+ days) and {cancelled_count} cancelled orders (180+ days)"
         }
         
     except Exception as e:

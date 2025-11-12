@@ -18,7 +18,7 @@ def run_settlement(x_job_key: str | None = Header(None)):
         raise HTTPException(401, "Unauthorized")
 
     today = datetime.now(TZ).date()
-    start = datetime.combine(today, datetime.min.time()).astimezone(TZ)
+    start = datetime.combine(today, datetime.min.tJime()).astimezone(TZ)
     end   = datetime.combine(today, datetime.max.time()).astimezone(TZ)
 
     conn = None

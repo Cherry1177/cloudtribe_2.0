@@ -23,6 +23,7 @@ export default function Page(){
   const [user, setUser] = useState<User>()
   const [purchasedItems, setPurchasedItems] = useState<PurchasedProduct[]>([])
   const [orders, setOrders] = useState<Order[]>([])
+  const [cancelledOrders, setCancelledOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>("")
   const [viewMode, setViewMode] = useState<'enhanced' | 'legacy'>('enhanced')
@@ -58,17 +59,26 @@ export default function Page(){
     }
   }
 
-  // Fetch orders using the new comprehensive system
-  const fetchBuyerOrders = async (userId: number) => {
+  // Fetch orders using the new comprehensive system (excludes cancelled by default)
+  const fetchBuyerOrders = async (userId: number, includeCancelled: boolean = false) => {
     if (!userId) return;
     
     setLoading(true);
     try {
-      const response = await fetch(`/api/orders/buyer/${userId}`);
+      const url = `/api/orders/buyer/${userId}${includeCancelled ? '?include_cancelled=true' : ''}`;
+      const response = await fetch(url);
       if (response.ok) {
         const buyerOrders = await response.json();
         console.log('Enhanced order data:', buyerOrders);
-        setOrders(buyerOrders);
+        if (includeCancelled) {
+          // Separate cancelled orders from active orders
+          const active = buyerOrders.filter((order: Order) => order.order_status !== '已取消');
+          const cancelled = buyerOrders.filter((order: Order) => order.order_status === '已取消');
+          setOrders(active);
+          setCancelledOrders(cancelled);
+        } else {
+          setOrders(buyerOrders);
+        }
         setError("");
       } else {
         setError("無法載入訂單資料");
@@ -81,11 +91,38 @@ export default function Page(){
     }
   };
 
+  // Fetch cancelled orders separately when needed
+  const fetchCancelledOrders = async (userId: number) => {
+    if (!userId) return;
+    
+    try {
+      const response = await fetch(`/api/orders/buyer/${userId}?include_cancelled=true`);
+      if (response.ok) {
+        const allOrders = await response.json();
+        const cancelled = allOrders.filter((order: Order) => order.order_status === '已取消');
+        setCancelledOrders(cancelled);
+      }
+    } catch (error) {
+      console.error('Error fetching cancelled orders:', error);
+    }
+  };
+
   const refreshOrders = () => {
     if (user && user.id) {
       fetchBuyerOrders(user.id);
+      // Also refresh cancelled orders if we're on that tab
+      if (activeTab === '已取消') {
+        fetchCancelledOrders(user.id);
+      }
     }
   };
+
+  // Fetch cancelled orders when "已取消" tab is selected
+  useEffect(() => {
+    if (activeTab === '已取消' && user && user.id && cancelledOrders.length === 0) {
+      fetchCancelledOrders(user.id);
+    }
+  }, [activeTab, user]);
 
   // Handle order cancellation
   const handleCancelOrder = async (orderId: number, service: string) => {
@@ -111,8 +148,8 @@ export default function Page(){
       const result = await response.json();
       alert(result.message || '訂單已成功取消');
       
-      // Refresh orders after cancellation
-      await fetchBuyerOrders(user.id);
+      // Refresh orders after cancellation (fetch all including cancelled)
+      await fetchBuyerOrders(user.id, true);
     } catch (error) {
       console.error('Error cancelling order:', error);
       const errorMessage = error instanceof Error ? error.message : '取消訂單失敗，請稍後再試';
@@ -123,8 +160,23 @@ export default function Page(){
 
   // Filter orders by status for tabs
   const getOrdersByStatus = (status: string) => {
-    if (status === 'all') return orders;
+    if (status === 'all') {
+      // Exclude cancelled orders from "全部" tab for better performance
+      return orders.filter(order => order.order_status !== '已取消');
+    }
+    if (status === '已取消') {
+      return cancelledOrders;
+    }
+    if (status === '已完成') {
+      // Map '已送達' (delivered) to '已完成' (completed) tab
+      return orders.filter(order => order.order_status === '已送達' || order.order_status === '已完成');
+    }
     return orders.filter(order => order.order_status === status);
+  };
+
+  // Get count for "全部" tab (excluding cancelled)
+  const getAllOrdersCount = () => {
+    return orders.filter(order => order.order_status !== '已取消').length;
   };
 
   return(
@@ -184,19 +236,20 @@ export default function Page(){
             {/* Enhanced Order Tabs */}
             {!loading && !error && (
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-5">
-                  <TabsTrigger value="all">全部 ({orders.length})</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-6">
+                  <TabsTrigger value="all">全部 ({getAllOrdersCount()})</TabsTrigger>
                   <TabsTrigger value="未接單">⏳ 未接單 ({getOrdersByStatus('未接單').length})</TabsTrigger>
                   <TabsTrigger value="接單">🚚 已接單 ({getOrdersByStatus('接單').length})</TabsTrigger>
                   <TabsTrigger value="配送中">🛣️ 配送中 ({getOrdersByStatus('配送中').length})</TabsTrigger>
                   <TabsTrigger value="已完成">✅ 已完成 ({getOrdersByStatus('已完成').length})</TabsTrigger>
+                  <TabsTrigger value="已取消">❌ 已取消 ({cancelledOrders.length})</TabsTrigger>
                 </TabsList>
 
-                {/* All Orders */}
+                {/* All Orders (excludes cancelled) */}
                 <TabsContent value="all" className="mt-6">
-                  {orders.length > 0 ? (
+                  {getOrdersByStatus('all').length > 0 ? (
                     <div className="grid gap-6">
-                      {orders.map((order) => (
+                      {getOrdersByStatus('all').map((order) => (
                         <BuyerOrderCard 
                           key={`${order.service}-${order.id}`} 
                           order={order} 
@@ -208,6 +261,25 @@ export default function Page(){
                     <div className="text-center py-12 bg-blue-50 border border-blue-200 rounded-lg">
                       <p className="text-blue-600 text-lg">您還沒有任何訂單</p>
                       <p className="text-blue-500 text-sm mt-2">開始購物來建立您的第一筆訂單吧！</p>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Cancelled Orders Tab */}
+                <TabsContent value="已取消" className="mt-6">
+                  {cancelledOrders.length > 0 ? (
+                    <div className="grid gap-6">
+                      {cancelledOrders.map((order) => (
+                        <BuyerOrderCard 
+                          key={`${order.service}-${order.id}`} 
+                          order={order} 
+                          onCancel={handleCancelOrder}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 bg-gray-50 border border-gray-200 rounded-lg">
+                      <p className="text-gray-600">沒有已取消的訂單</p>
                     </div>
                   )}
                 </TabsContent>

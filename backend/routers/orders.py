@@ -17,7 +17,7 @@ from datetime import datetime
 import json
 from backend.handlers.send_message import LineMessageService
 from psycopg2.extensions import connection as Connection
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from backend.models.models import Order, DriverOrder, TransferOrderRequest, DetailedOrder, PendingTransfer, AcceptTransferRequest, CancelOrderRequest, CompleteOrderRequest
 from backend.database import get_db_connection, return_db_connection
 import os
@@ -1625,11 +1625,16 @@ async def cancel_order(service: str, order_id: int, request: CancelOrderRequest,
         cur.close()
 
 @router.get("/buyer/{buyer_id}")
-async def get_buyer_orders(buyer_id: int, conn: Connection = Depends(get_db)):
+async def get_buyer_orders(
+    buyer_id: int, 
+    include_cancelled: bool = Query(False, description="Include cancelled orders in results"),
+    conn: Connection = Depends(get_db)
+):
     """
     Get all orders for a specific buyer.
     Args:
         buyer_id (int): The ID of the buyer.
+        include_cancelled (bool): If True, include cancelled orders. Default False (excludes cancelled).
         conn (Connection): The database connection.
     Returns:
         List[dict]: List of orders for the buyer.
@@ -1638,14 +1643,23 @@ async def get_buyer_orders(buyer_id: int, conn: Connection = Depends(get_db)):
     try:
         order_list = []
         
-        # Get regular orders
-        cur.execute("""
-            SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price,
-                   order_type, order_status, note, timestamp
-            FROM orders
-            WHERE buyer_id = %s
-            ORDER BY timestamp DESC
-        """, (buyer_id,))
+        # Get regular orders (exclude cancelled by default for better performance)
+        if include_cancelled:
+            cur.execute("""
+                SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price,
+                       order_type, order_status, note, timestamp
+                FROM orders
+                WHERE buyer_id = %s
+                ORDER BY timestamp DESC
+            """, (buyer_id,))
+        else:
+            cur.execute("""
+                SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price,
+                       order_type, order_status, note, timestamp
+                FROM orders
+                WHERE buyer_id = %s AND order_status != '已取消'
+                ORDER BY timestamp DESC
+            """, (buyer_id,))
         
         orders = cur.fetchall()
         for order in orders:
@@ -1690,17 +1704,29 @@ async def get_buyer_orders(buyer_id: int, conn: Connection = Depends(get_db)):
             }
             order_list.append(order_dict)
         
-        # Get agricultural product orders
-        cur.execute("""
-            SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone,
-                   agri_p_o.end_point, agri_p_o.status, agri_p_o.note, agri_p_o.timestamp,
-                   agri_p.id, agri_p.name, agri_p.price, agri_p_o.quantity, agri_p.img_link,
-                   agri_p_o.starting_point, agri_p.category
-            FROM agricultural_product_order as agri_p_o
-            JOIN agricultural_produce as agri_p on agri_p.id = agri_p_o.produce_id
-            WHERE agri_p_o.buyer_id = %s
-            ORDER BY agri_p_o.timestamp DESC
-        """, (buyer_id,))
+        # Get agricultural product orders (exclude cancelled by default)
+        if include_cancelled:
+            cur.execute("""
+                SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone,
+                       agri_p_o.end_point, agri_p_o.status, agri_p_o.note, agri_p_o.timestamp,
+                       agri_p.id, agri_p.name, agri_p.price, agri_p_o.quantity, agri_p.img_link,
+                       agri_p_o.starting_point, agri_p.category
+                FROM agricultural_product_order as agri_p_o
+                JOIN agricultural_produce as agri_p on agri_p.id = agri_p_o.produce_id
+                WHERE agri_p_o.buyer_id = %s
+                ORDER BY agri_p_o.timestamp DESC
+            """, (buyer_id,))
+        else:
+            cur.execute("""
+                SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone,
+                       agri_p_o.end_point, agri_p_o.status, agri_p_o.note, agri_p_o.timestamp,
+                       agri_p.id, agri_p.name, agri_p.price, agri_p_o.quantity, agri_p.img_link,
+                       agri_p_o.starting_point, agri_p.category
+                FROM agricultural_product_order as agri_p_o
+                JOIN agricultural_produce as agri_p on agri_p.id = agri_p_o.produce_id
+                WHERE agri_p_o.buyer_id = %s AND agri_p_o.status != '已取消'
+                ORDER BY agri_p_o.timestamp DESC
+            """, (buyer_id,))
         
         agri_orders = cur.fetchall()
         for agri_order in agri_orders:
