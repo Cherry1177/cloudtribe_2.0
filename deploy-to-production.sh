@@ -104,6 +104,18 @@ ssh -i ~/Desktop/cloudtribe-2.0/Cloudtribe2.pem ubuntu@$EC2_HOST << 'ENDSSH'
         echo "📊 PM2 Status:"
         pm2 status
         echo ""
+        
+        # Warm up the frontend to avoid cold-start delays
+        echo "🔥 Warming up frontend (preventing cold-start)..."
+        sleep 3
+        curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1 && echo "✅ Frontend warmed up" || echo "⚠️  Frontend warmup failed (may still be starting)"
+        echo ""
+        
+        # Warm up the backend health endpoint
+        echo "🔥 Warming up backend..."
+        curl -fsS http://127.0.0.1:8001/health >/dev/null 2>&1 && echo "✅ Backend warmed up" || echo "⚠️  Backend warmup failed (may still be starting)"
+        echo ""
+        
         echo "📋 PM2 Logs (last 20 lines):"
         pm2 logs --lines 20
     else

@@ -1,20 +1,25 @@
 [Unit]
-Description=CloudTribe (Next.js)
+Description=CloudTribe (Next.js Frontend - Production)
 After=network.target
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/cloudtribe-2.0
-ExecStart=/usr/bin/npm run dev
+WorkingDirectory=/home/ubuntu/cloudtribe-2.0/client
+# Use production mode (npm run start) instead of dev mode
+# Note: This requires the app to be built first (npm run build)
+ExecStart=/usr/bin/npm run start
+# Warm up the app after start to avoid cold-start delays
+ExecStartPost=/usr/bin/bash -c 'sleep 3 && curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1 || true'
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=cloudtribe
+SyslogIdentifier=cloudtribe-frontend
 
-# Environment variables if needed
+# Environment variables
 Environment=NODE_ENV=production
+Environment=PORT=3000
 
 # Resource limits
 LimitNOFILE=65536
