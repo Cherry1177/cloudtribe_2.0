@@ -301,6 +301,10 @@ const BuyerOrderCard: React.FC<{
                         // Check if values is empty (handles both array and string cases)
                         const isEmpty = !values || (Array.isArray(values) && values.length === 0) || (typeof values === 'string' && values.trim().length === 0);
                         if (isEmpty) return null;
+                        
+                        // Ensure values is a valid type (string or string[])
+                        if (typeof values !== 'string' && !Array.isArray(values)) return null;
+                        
                         const labelMap: Record<string, string> = {
                           'ice': '冰度',
                           'sweetness': '甜度',
@@ -310,9 +314,10 @@ const BuyerOrderCard: React.FC<{
                           '醬料': '醬料'
                         };
                         const label = labelMap[key] || key;
+                        const displayValue = Array.isArray(values) ? values.join('、') : String(values);
                         return (
                           <span key={key} className="block">
-                            {label}：{Array.isArray(values) ? values.join('、') : values}
+                            {label}：{displayValue}
                           </span>
                         );
                       })}
