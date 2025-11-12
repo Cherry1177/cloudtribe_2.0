@@ -35,6 +35,7 @@ const HistoryManagement: React.FC<HistoryManagementProps> = ({
   const [exportLoading, setExportLoading] = useState<string | null>(null);
   const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [showCleanupRecommendation, setShowCleanupRecommendation] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadHistoryStats();
@@ -42,14 +43,27 @@ const HistoryManagement: React.FC<HistoryManagementProps> = ({
 
   const loadHistoryStats = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const result = await historyService.getHistoryStats();
-      if (result.success) {
+      // Add timeout to prevent hanging forever
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 10000)
+      );
+      
+      const result = await Promise.race([
+        historyService.getHistoryStats(),
+        timeoutPromise
+      ]) as { success: boolean; stats: HistoryStats; cleanup_recommendation: boolean; error?: string };
+      
+      if (result.success && result.stats) {
         setStats(result.stats);
         setShowCleanupRecommendation(result.cleanup_recommendation);
+      } else {
+        setError(result.error || '無法載入統計資料');
       }
     } catch (error) {
       console.error('Error loading history stats:', error);
+      setError('載入統計資料時發生錯誤，請稍後再試');
     } finally {
       setLoading(false);
     }
@@ -131,6 +145,17 @@ const HistoryManagement: React.FC<HistoryManagementProps> = ({
         <CardContent>
           {loading ? (
             <div className="text-center py-4">載入中...</div>
+          ) : error ? (
+            <div className="text-center py-4">
+              <p className="text-red-600 mb-2">{error}</p>
+              <Button 
+                onClick={loadHistoryStats}
+                variant="outline"
+                size="sm"
+              >
+                重新載入
+              </Button>
+            </div>
           ) : stats ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">

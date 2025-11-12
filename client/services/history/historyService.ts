@@ -28,12 +28,41 @@ class HistoryService {
    */
   async getHistoryStats(): Promise<{ success: boolean; stats: HistoryStats; cleanup_recommendation: boolean; error?: string }> {
     try {
-      const response = await fetch('/api/history/history-stats');
+      const response = await fetch('/api/history/history-stats', {
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
+        return { 
+          success: false, 
+          stats: {
+            last_30_days: { total_orders: 0, total_revenue: 0 },
+            last_90_days: { total_orders: 0, total_revenue: 0 },
+            older_than_90_days: { total_orders: 0, total_revenue: 0 }
+          }, 
+          cleanup_recommendation: false, 
+          error: errorData.detail || `HTTP ${response.status}` 
+        };
+      }
+      
       const data = await response.json();
       return data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching history stats:', error);
-      return { success: false, stats: {} as HistoryStats, cleanup_recommendation: false, error: String(error) };
+      const errorMessage = error.name === 'AbortError' 
+        ? '請求超時，請稍後再試'
+        : error.message || '無法載入統計資料';
+      return { 
+        success: false, 
+        stats: {
+          last_30_days: { total_orders: 0, total_revenue: 0 },
+          last_90_days: { total_orders: 0, total_revenue: 0 },
+          older_than_90_days: { total_orders: 0, total_revenue: 0 }
+        }, 
+        cleanup_recommendation: false, 
+        error: errorMessage 
+      };
     }
   }
 
