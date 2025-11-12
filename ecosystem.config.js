@@ -5,7 +5,7 @@ module.exports = {
       script: 'venv/bin/uvicorn',
       args: 'backend.main:app --host 0.0.0.0 --port 8001 --timeout-keep-alive 75 --timeout-graceful-shutdown 10',
       interpreter: 'venv/bin/python3',
-      cwd: '/home/ubuntu/cloudtribe-2.0',
+      cwd: '/home/ubuntu/cloudtribe_2.0',
       instances: 1,
       exec_mode: 'fork',
       env: {
@@ -41,7 +41,7 @@ module.exports = {
       name: 'frontend',
       script: 'npm',
       args: 'run start',
-      cwd: '/home/ubuntu/cloudtribe-2.0/client',
+      cwd: '/home/ubuntu/cloudtribe_2.0/client',
       instances: 1,
       exec_mode: 'fork',
       env: {
