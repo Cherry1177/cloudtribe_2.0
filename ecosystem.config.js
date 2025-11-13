@@ -35,7 +35,11 @@ module.exports = {
       
       // Health monitoring
       wait_ready: false,
-      exp_backoff_restart_delay: 100
+      exp_backoff_restart_delay: 100,
+      
+      // Auto-restart on health check failure
+      // PM2 will monitor the health endpoint and restart if it fails
+      // Note: This requires pm2-health-check module or custom monitoring script
     },
     {
       name: 'frontend',

@@ -425,36 +425,61 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
             "client_ip": request.client.host if request else "N/A"
         })
         
-        # First, automatically mark expired orders
-        # For unaccepted orders - mark as expired
-        cur.execute(
-            """
-            UPDATE orders 
-            SET order_status = '已過期'
-            WHERE order_status = '未接單' 
-            AND timestamp < NOW() - INTERVAL '2 hours'
-            """
-        )
+        # OPTIMIZATION: Mark expired orders in a separate transaction to avoid blocking
+        # Use a quick check first to see if there are any expired orders
+        cur.execute("""
+            SELECT COUNT(*) FROM orders 
+            WHERE (order_status = '未接單' AND timestamp < NOW() - INTERVAL '2 hours')
+               OR (order_status = '接單' AND timestamp < NOW() - INTERVAL '4 hours')
+        """)
+        expired_count = cur.fetchone()[0]
         
-        # For accepted orders - mark as needing driver action if expired during delivery
-        cur.execute(
-            """
-            UPDATE orders 
-            SET order_status = '配送逾時'
-            WHERE order_status = '接單' 
-            AND timestamp < NOW() - INTERVAL '4 hours'
-            """
-        )
-        expired_count = cur.rowcount
+        # Only run UPDATE if there are expired orders (avoids unnecessary locks)
+        # OPTIMIZATION: Batch update with LIMIT to reduce lock time
         if expired_count > 0:
-            conn.commit()
-            log_event("AUTO_EXPIRED_ORDERS", {
-                "expired_count": expired_count,
-                "during": "fetch_orders"
-            })
+            # Update expired unaccepted orders (batch of 100 at a time)
+            cur.execute(
+                """
+                WITH expired_orders AS (
+                    SELECT id FROM orders 
+                    WHERE order_status = '未接單' 
+                    AND timestamp < NOW() - INTERVAL '2 hours'
+                    LIMIT 100
+                )
+                UPDATE orders 
+                SET order_status = '已過期'
+                WHERE id IN (SELECT id FROM expired_orders)
+                """
+            )
+            updated_count_1 = cur.rowcount
+            
+            # Update expired accepted orders (batch of 100 at a time)
+            cur.execute(
+                """
+                WITH expired_orders AS (
+                    SELECT id FROM orders 
+                    WHERE order_status = '接單' 
+                    AND timestamp < NOW() - INTERVAL '4 hours'
+                    LIMIT 100
+                )
+                UPDATE orders 
+                SET order_status = '配送逾時'
+                WHERE id IN (SELECT id FROM expired_orders)
+                """
+            )
+            updated_count_2 = cur.rowcount
+            
+            if updated_count_1 > 0 or updated_count_2 > 0:
+                conn.commit()
+                log_event("AUTO_EXPIRED_ORDERS", {
+                    "expired_count": expired_count,
+                    "updated_unaccepted": updated_count_1,
+                    "updated_accepted": updated_count_2,
+                    "during": "fetch_orders"
+                })
         
-        # Then fetch all unaccepted orders with their items using JOIN (fixes N+1 query problem)
-        # This single query replaces the loop with individual queries, dramatically improving performance
+        # OPTIMIZATION: Fetch unaccepted orders with LIMIT and better indexing
+        # Use the composite index (order_status, timestamp) for faster queries
         cur.execute("""
             SELECT 
                 o.id, o.buyer_id, o.buyer_name, o.buyer_phone, o.location, o.is_urgent, 
@@ -465,7 +490,8 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
             FROM orders o
             LEFT JOIN order_items oi ON o.id = oi.order_id
             WHERE o.order_status = '未接單'
-            ORDER BY o.id, oi.id
+            ORDER BY o.timestamp DESC, o.id, oi.id
+            LIMIT 200
         """)
         rows = cur.fetchall()
         
@@ -513,13 +539,15 @@ async def get_orders(conn: Connection = Depends(get_db), request: Request = None
                 order_dict[order_id]["items"].append(item_dict)
         
         order_list = list(order_dict.values())
-        # Add agricultural_product orders (only unaccepted ones)
+        # OPTIMIZATION: Add agricultural_product orders with LIMIT and use index
         cur.execute("""
             SELECT agri_p_o.id, agri_p_o.buyer_id, agri_p_o.buyer_name, agri_p_o.buyer_phone, agri_p_o.end_point, agri_p_o.status, agri_p_o.note, 
                     agri_p.id, agri_p.name, agri_p.price, agri_p_o.quantity, agri_p.img_link, agri_p_o.starting_point, agri_p.category, agri_p_o.is_put,agri_p_o.timestamp
             FROM agricultural_product_order as agri_p_o
             JOIN agricultural_produce as agri_p ON agri_p.id = agri_p_o.produce_id
             WHERE agri_p_o.status = '未接單'
+            ORDER BY agri_p_o.timestamp DESC
+            LIMIT 200
         """)
         agri_orders = cur.fetchall()
         for agri_order in agri_orders:
@@ -1692,66 +1720,82 @@ async def get_buyer_orders(
     try:
         order_list = []
         
-        # Get regular orders (exclude cancelled by default for better performance)
+        # Get regular orders with items using LEFT JOIN (fixes N+1 query problem)
+        # This single query replaces the loop with individual queries, dramatically improving performance
         if include_cancelled:
             cur.execute("""
-                SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price,
-                       order_type, order_status, note, timestamp
-                FROM orders
-                WHERE buyer_id = %s
-                ORDER BY timestamp DESC
+                SELECT 
+                    o.id, o.buyer_id, o.buyer_name, o.buyer_phone, o.location, o.is_urgent, 
+                    o.total_price, o.order_type, o.order_status, o.note, o.timestamp,
+                    oi.item_id, oi.item_name, oi.price, oi.quantity, oi.img, oi.location as item_location, 
+                    oi.category, COALESCE(oi.selected_options, 'null') as selected_options
+                FROM orders o
+                LEFT JOIN order_items oi ON o.id = oi.order_id
+                WHERE o.buyer_id = %s
+                ORDER BY o.timestamp DESC, o.id, oi.id
             """, (buyer_id,))
         else:
             cur.execute("""
-                SELECT id, buyer_id, buyer_name, buyer_phone, location, is_urgent, total_price,
-                       order_type, order_status, note, timestamp
-                FROM orders
-                WHERE buyer_id = %s AND order_status != '已取消'
-                ORDER BY timestamp DESC
+                SELECT 
+                    o.id, o.buyer_id, o.buyer_name, o.buyer_phone, o.location, o.is_urgent, 
+                    o.total_price, o.order_type, o.order_status, o.note, o.timestamp,
+                    oi.item_id, oi.item_name, oi.price, oi.quantity, oi.img, oi.location as item_location, 
+                    oi.category, COALESCE(oi.selected_options, 'null') as selected_options
+                FROM orders o
+                LEFT JOIN order_items oi ON o.id = oi.order_id
+                WHERE o.buyer_id = %s AND o.order_status != '已取消'
+                ORDER BY o.timestamp DESC, o.id, oi.id
             """, (buyer_id,))
         
-        orders = cur.fetchall()
-        for order in orders:
-            # Get order items
-            cur.execute("SELECT item_id, item_name, price, quantity, img, location, category, selected_options FROM order_items WHERE order_id = %s", (order[0],))
-            items = cur.fetchall()
+        rows = cur.fetchall()
+        
+        # Group items by order_id
+        order_dict = {}
+        for row in rows:
+            order_id = row[0]
             
-            # Parse selectedOptions from JSON if present
-            parsed_items = []
-            for item in items:
-                item_dict = {
-                    "item_id": item[0],
-                    "item_name": item[1],
-                    "price": float(item[2]),
-                    "quantity": int(item[3]),
-                    "img": item[4],
-                    "location": item[5],
-                    "category": item[6]
+            # If this order hasn't been seen yet, create the order entry
+            if order_id not in order_dict:
+                order_dict[order_id] = {
+                    "id": row[0],
+                    "buyer_id": row[1],
+                    "buyer_name": row[2],
+                    "buyer_phone": row[3],
+                    "location": row[4],
+                    "is_urgent": bool(row[5]),
+                    "total_price": float(row[6]),
+                    "order_type": row[7],
+                    "order_status": row[8],
+                    "note": row[9],
+                    "timestamp": row[10].isoformat() if row[10] else None,
+                    "service": "necessities",
+                    "items": []
                 }
-                # Parse selected_options JSON if present (item[7] is the selected_options column)
-                if len(item) > 7 and item[7] is not None:
+            
+            # Add item if it exists (LEFT JOIN may return NULL for orders with no items)
+            if row[11] is not None:  # item_id
+                item_dict = {
+                    "item_id": row[11],
+                    "item_name": row[12],
+                    "price": float(row[13]),
+                    "quantity": int(row[14]),
+                    "img": row[15],
+                    "location": row[16],
+                    "category": row[17]
+                }
+                # Parse selected_options JSON if present
+                if row[18] is not None and row[18] != 'null':
                     try:
-                        item_dict["selectedOptions"] = json.loads(item[7]) if isinstance(item[7], str) else item[7]
+                        item_dict["selectedOptions"] = json.loads(row[18]) if isinstance(row[18], str) else row[18]
                     except (json.JSONDecodeError, TypeError):
                         item_dict["selectedOptions"] = None
-                parsed_items.append(item_dict)
-            
-            order_dict = {
-                "id": order[0],
-                "buyer_id": order[1],
-                "buyer_name": order[2],
-                "buyer_phone": order[3],
-                "location": order[4],
-                "is_urgent": bool(order[5]),
-                "total_price": float(order[6]),
-                "order_type": order[7],
-                "order_status": order[8],
-                "note": order[9],
-                "timestamp": order[10].isoformat() if order[10] else None,
-                "service": "necessities",
-                "items": parsed_items
-            }
-            order_list.append(order_dict)
+                else:
+                    item_dict["selectedOptions"] = None
+                
+                order_dict[order_id]["items"].append(item_dict)
+        
+        # Convert dictionary to list
+        order_list = list(order_dict.values())
         
         # Get agricultural product orders (exclude cancelled by default)
         if include_cancelled:

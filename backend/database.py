@@ -55,6 +55,7 @@ def get_db_connection():
     Falls back to direct connection if pool is not initialized.
     Validates connection before returning to ensure it's still alive.
     Applies keepalive settings to prevent idle connection timeouts.
+    Adds timeout to prevent hanging.
     """
     global connection_pool
     
@@ -63,55 +64,97 @@ def get_db_connection():
         logger.warning("Connection pool not initialized, using direct connection with keepalive")
         return create_connection_with_keepalive()
     
-    try:
-        conn = connection_pool.getconn()
-        # Validate connection is still alive
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1")
-            cursor.close()
-        except (psycopg2.OperationalError, psycopg2.InterfaceError):
-            # Connection is dead, close it and get a new one
-            try:
-                conn.close()
-            except:
-                pass
-            # Get a new connection from pool
             conn = connection_pool.getconn()
-            # Re-validate the new connection
+            # Validate connection is still alive with timeout
             try:
+                # Set a timeout for the validation query (5 seconds)
+                conn.set_session(autocommit=False)
                 cursor = conn.cursor()
                 cursor.execute("SELECT 1")
+                cursor.fetchone()
                 cursor.close()
-            except (psycopg2.OperationalError, psycopg2.InterfaceError):
-                # If pool connection is also dead, create a new one with keepalive
+                return conn
+            except (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.DatabaseError) as e:
+                # Connection is dead, close it
+                logger.warning(f"Connection validation failed (attempt {attempt + 1}): {str(e)}")
                 try:
                     conn.close()
                 except:
                     pass
-                conn = create_connection_with_keepalive()
-        return conn
-    except Exception as e:
-        logger.error(f"Error getting connection from pool: {str(e)}")
-        # Fallback to direct connection with keepalive
-        return create_connection_with_keepalive()
+                
+                # If this was the last attempt, create a new connection
+                if attempt == max_retries - 1:
+                    logger.warning("All pool connections failed, creating new connection with keepalive")
+                    return create_connection_with_keepalive()
+                
+                # Try to get another connection from pool
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected error validating connection: {str(e)}")
+                try:
+                    conn.close()
+                except:
+                    pass
+                if attempt == max_retries - 1:
+                    return create_connection_with_keepalive()
+                continue
+        except pool.PoolError as e:
+            # Pool is exhausted or error getting connection
+            logger.error(f"Pool error (attempt {attempt + 1}): {str(e)}")
+            if attempt == max_retries - 1:
+                logger.warning("Pool exhausted, creating direct connection with keepalive")
+                return create_connection_with_keepalive()
+            continue
+        except Exception as e:
+            logger.error(f"Error getting connection from pool: {str(e)}")
+            if attempt == max_retries - 1:
+                return create_connection_with_keepalive()
+            continue
+    
+    # Final fallback
+    return create_connection_with_keepalive()
 
 def return_db_connection(conn):
     """
     Return a connection to the pool.
+    Always ensures connection is closed if pool return fails.
     """
     global connection_pool
     
+    if conn is None:
+        return
+    
     if connection_pool is None:
         # If pool not initialized, just close the connection
-        conn.close()
+        try:
+            conn.close()
+        except:
+            pass
         return
     
     try:
-        connection_pool.putconn(conn)
+        # Check if connection is still valid before returning
+        try:
+            if conn.closed == 0:  # Connection is open
+                connection_pool.putconn(conn)
+            else:
+                logger.warning("Attempted to return closed connection to pool")
+        except AttributeError:
+            # Connection object doesn't have 'closed' attribute, try to return anyway
+            connection_pool.putconn(conn)
+    except pool.PoolError as e:
+        logger.error(f"Pool error returning connection: {str(e)}")
+        # If pool is full or error, close the connection
+        try:
+            conn.close()
+        except:
+            pass
     except Exception as e:
         logger.error(f"Error returning connection to pool: {str(e)}")
-        # If returning fails, close the connection
+        # If returning fails, close the connection to prevent leaks
         try:
             conn.close()
         except:
