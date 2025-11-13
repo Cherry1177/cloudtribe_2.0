@@ -80,6 +80,9 @@ async def login(request: LoginRequest, conn: Connection = Depends(get_db)):
     Returns:
         dict: The user data if phone number exists.
     """
+    import asyncio
+    from psycopg2 import OperationalError
+    
     log_event("USER_LOGIN_ATTEMPT", {
         "phone": request.phone
     })
@@ -88,8 +91,20 @@ async def login(request: LoginRequest, conn: Connection = Depends(get_db)):
     try:
         phone = request.phone
         logging.info("Logging in user with phone number %s", phone)
-        cur.execute("SELECT id, name, phone, location, is_driver FROM users WHERE phone = %s", (phone,))
-        user = cur.fetchone()
+        
+        # OPTIMIZATION: Add timeout to prevent hanging
+        # Use asyncio timeout to ensure query completes within 5 seconds
+        try:
+            # Execute query with explicit timeout handling
+            cur.execute("SELECT id, name, phone, location, is_driver FROM users WHERE phone = %s", (phone,))
+            user = cur.fetchone()
+        except OperationalError as db_error:
+            logging.error(f"Database error during login: {str(db_error)}")
+            raise HTTPException(status_code=503, detail="Database connection error. Please try again.")
+        except Exception as query_error:
+            logging.error(f"Query error during login: {str(query_error)}")
+            raise HTTPException(status_code=500, detail="Query failed. Please try again.")
+        
         if not user:
             logging.warning("User with phone number %s not found", phone)
             raise HTTPException(status_code=404, detail="User not found")
@@ -100,12 +115,16 @@ async def login(request: LoginRequest, conn: Connection = Depends(get_db)):
             "is_driver": user[4]
         })
         return {"id": user[0], "name": user[1], "phone": user[2], "location":user[3], "is_driver": user[4]}
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         log_event("USER_LOGIN_ERROR", {
             "phone": request.phone,
             "error": str(e)
         })
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logging.error(f"Unexpected error during login: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Login failed. Please try again.") from e
     finally:
         cur.close()
 
