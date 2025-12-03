@@ -371,47 +371,11 @@ The project is deployed on:
 
 See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for detailed deployment instructions.
 
----
 
-## 📚 Additional Documentation
-
-- [BEGINNER_GUIDE.md](./BEGINNER_GUIDE.md) - Complete beginner's guide to understanding the project
-- [MODERN_STACK_EXPLAINED.md](./MODERN_STACK_EXPLAINED.md) - Explanation of modern web development stack
-- [LEARNING_ROADMAP.md](./LEARNING_ROADMAP.md) - Step-by-step learning path
-- [QUICK_REFERENCE.md](./QUICK_REFERENCE.md) - Quick reference cheat sheet
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📝 License
-
-This project is private and proprietary.
-
-
-
----
-
-## 🙏 Acknowledgments
-
-- LINE Bot API for messaging integration
-- Google Maps API for location services
-- Next.js and React communities
-- FastAPI framework
-
----
 
 ## 📞 Support
 
-For issues, questions, or contributions, please open an issue on the repository.
+For issues, questions, or contributions, please email to ayethihan01@gmail.com
 
 ---
 
