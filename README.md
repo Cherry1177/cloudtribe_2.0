@@ -6,13 +6,13 @@ A platform that connects real-world supply and demand, enabling community member
 **Version**: 2.0.0  
 **Created**: January 2025
 
-## 🎬 Platform Features Demo
+##  Platform Features Demo
 
 [![CloudTribe Demo](https://img.youtube.com/vi/6p1t8VfcdAA/0.jpg)](https://youtu.be/6p1t8VfcdAA)
 
 ---
 
-## 📖 Project Overview
+##  Project Overview
 
 CloudTribe is an innovative convenience economy platform designed to connect supply and demand in the real world, allowing community members to efficiently share resources and services.
 
@@ -30,7 +30,7 @@ CloudTribe is an innovative convenience economy platform designed to connect sup
 
 ---
 
-## 🚀 Core Features
+## Core Features
 
 1. **Role Selection & Matching**: Users can choose Buyer, Seller, or Driver roles with intelligent order matching
 2. **Order Management**: Dynamic form interface supporting order creation, modification, and deletion
@@ -41,7 +41,7 @@ CloudTribe is an innovative convenience economy platform designed to connect sup
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 ### Frontend Technologies
 - **Framework**: Next.js 15.3.3 + React 18
@@ -72,13 +72,13 @@ CloudTribe is an innovative convenience economy platform designed to connect sup
 
 ---
 
-## 📊 System Architecture
+## System Architecture
 
 ![system diagram](https://github.com/user-attachments/assets/2235e7d6-e912-409a-9810-c952205bee2a)
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -127,7 +127,7 @@ CloudTribe is an innovative convenience economy platform designed to connect sup
 
 ---
 
-## ⚙️ Detailed Setup Instructions
+## Detailed Setup Instructions
 
 ### Frontend: Google Maps API Setup
 
@@ -235,7 +235,7 @@ IMGBB_API_KEY=your_imgbb_api_key
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 cloudtribe-2.0/
@@ -283,7 +283,7 @@ cloudtribe-2.0/
 
 ---
 
-## 🔧 Development Commands
+## Development Commands
 
 ### Frontend
 ```bash
@@ -321,7 +321,7 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8001 --reload
 
 ---
 
-## 🌐 API Endpoints
+## API Endpoints
 
 The backend API runs on `http://localhost:8001` with the following main routes:
 
@@ -338,7 +338,7 @@ The backend API runs on `http://localhost:8001` with the following main routes:
 
 ---
 
-## 🚢 Deployment
+## Deployment
 
 ### Production Deployment
 
@@ -373,7 +373,7 @@ See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for detailed deployment instruc
 
 
 
-## 📞 Support
+## Support
 
 For issues, questions, or contributions, please email to ayethihan01@gmail.com
 
